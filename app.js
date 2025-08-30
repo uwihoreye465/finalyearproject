@@ -10,7 +10,7 @@ const sinnerRoutes = require('./src/routes/sinners');
 const victimRoutes = require('./src/routes/victims');
 const notificationRoutes = require('./src/routes/notifications');
 const userRoutes = require('./src/routes/users');
-
+const searchRoutes = require('./src/routes/search'); // CORRECTED PATH
 // Middleware
 const errorHandler = require('./src/middleware/errorHandler');
 
@@ -40,6 +40,8 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // API routes
+
+app.use('/api/search', searchRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/sinners', sinnerRoutes);
 app.use('/api/victims', victimRoutes);

@@ -8,6 +8,7 @@ const { validateRegistration, validateLogin } = require('../middleware/validatio
 router.post('/register', validateRegistration, authController.register);
 router.post('/login', validateLogin, authController.login);
 router.get('/verify-email/:token', authController.verifyEmail);
+router.post('/create-first-admin', authController.createFirstAdmin);
 
 // Protected routes
 router.get('/profile', auth, authController.getProfile);

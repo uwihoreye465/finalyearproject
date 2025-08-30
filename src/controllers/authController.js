@@ -5,6 +5,51 @@ const { generateTokens } = require('../config/jwt');
 const emailService = require('../services/emailService');
 
 class AuthController {
+  // Add this method to AuthController class
+async createFirstAdmin(req, res) {
+  try {
+    // Check if any admin exists
+    const adminCheck = await pool.query(
+      'SELECT COUNT(*) as count FROM users WHERE role = $1',
+      ['admin']
+    );
+
+    if (parseInt(adminCheck.rows[0].count) > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Admin user already exists'
+      });
+    }
+
+    const { sector, fullname, position, email, password } = req.body;
+
+    // Hash password
+    const salt = await bcrypt.genSalt(12);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // Insert admin user
+    const result = await pool.query(
+      `INSERT INTO users (sector, fullname, position, email, password, role, is_verified, is_approved, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP) RETURNING user_id, email, fullname, role`,
+      [sector, fullname, position, email, hashedPassword, 'admin', true, true]
+    );
+
+    res.status(201).json({
+      success: true,
+      message: 'First admin user created successfully',
+      data: {
+        user: result.rows[0]
+      }
+    });
+
+  } catch (error) {
+    console.error('Create first admin error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create admin user'
+    });
+  }
+}
   // Register new user
   async register(req, res) {
     const client = await pool.connect();
@@ -73,24 +118,25 @@ class AuthController {
   }
 
   // Login user
-  async login(req, res) {
-    try {
-      const { email, password } = req.body;
+ async login(req, res) {
+  try {
+    const { email, password } = req.body;
 
-      // Find user
-      const result = await pool.query(
-        'SELECT * FROM users WHERE email = $1',
-        [email]
-      );
+    // Find user
+    const result = await pool.query(
+      'SELECT * FROM users WHERE email = $1',
+      [email]
+    );
 
-      if (result.rows.length === 0) {
-        return res.status(401).json({
-          success: false,
-          message: 'Invalid credentials'
-        });
-      }
+    if (result.rows.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      });
+    }
 
-      const user = result.rows[0];
+    const user = result.rows[0];
+
 
       // Check if user is verified
       if (!user.is_verified) {

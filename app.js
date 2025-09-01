@@ -6,11 +6,16 @@ require('dotenv').config();
 
 // Routes
 const authRoutes = require('./src/routes/auth');
-const sinnerRoutes = require('./src/routes/sinners');
+// const sinnerRoutes = require('./src/routes/sinners');
 const victimRoutes = require('./src/routes/victims');
 const notificationRoutes = require('./src/routes/notifications');
 const userRoutes = require('./src/routes/users');
 const searchRoutes = require('./src/routes/search'); // CORRECTED PATH
+// Add this line with other route imports
+const criminalRecordRoutes = require('./src/routes/criminalRecords');
+
+// Add this line with other route registrations
+
 // Middleware
 const errorHandler = require('./src/middleware/errorHandler');
 
@@ -43,11 +48,12 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use('/api/search', searchRoutes);
 app.use('/api/auth', authRoutes);
-app.use('/api/sinners', sinnerRoutes);
+// app.use('/api/sinners', sinnerRoutes);
+// app.use('/api/victims', victimRoutes);
 app.use('/api/victims', victimRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/users', userRoutes);
-
+app.use('/api/criminal-records', criminalRecordRoutes);
 // Health check endpoint
 app.get('/api/health', (req, res) => {
  res.json({ 

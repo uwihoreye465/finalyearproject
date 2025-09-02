@@ -104,12 +104,12 @@ app.use((req, res, next) => {
 });
 
 // API routes
-app.use('/api/search', searchRoutes);
-app.use('/api/auth', authRoutes);
-app.use('/api/victims', victimRoutes);
-app.use('/api/notifications', notificationRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/criminal-records', criminalRecordRoutes);
+app.use('/api/v1/search', searchRoutes);
+app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/victims', victimRoutes);
+app.use('/api/v1/notifications', notificationRoutes);
+app.use('/api/v1/users', userRoutes);
+app.use('/api/v1/criminal-records', criminalRecordRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

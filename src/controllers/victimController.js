@@ -492,6 +492,7 @@ class VictimController {
   }
 
   // Update victim record
+  // Update victim record - FIXED
   async updateVictim(req, res) {
     const client = await pool.connect();
 
@@ -500,6 +501,9 @@ class VictimController {
 
       const { id } = req.params;
       const updates = req.body;
+
+      console.log('🔍 Update request body:', updates);
+      console.log('🔍 Updating victim ID:', id);
 
       // Check if victim exists
       const existingVictim = await client.query(
@@ -528,6 +532,8 @@ class VictimController {
       for (const [key, value] of Object.entries(updates)) {
         if (!restrictedFields.includes(key)) {
           cleanUpdates[key] = value;
+        } else {
+          console.log(`⚠️  Restricted field "${key}" removed from update`);
         }
       }
 
@@ -535,9 +541,11 @@ class VictimController {
         await client.query('ROLLBACK');
         return res.status(400).json({
           success: false,
-          message: 'No valid fields provided for update'
+          message: 'No valid fields provided for update. Cannot update restricted fields like id_type, id_number, personal details, etc.'
         });
       }
+
+      console.log('✅ Clean updates:', cleanUpdates);
 
       const setClause = Object.keys(cleanUpdates)
         .map((key, index) => `${key} = $${index + 2}`)

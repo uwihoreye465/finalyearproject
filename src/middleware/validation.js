@@ -296,31 +296,136 @@ const validateCriminalRecordUpdate = (req, res, next) => {
 };
 
 // FIXED: Victim update validation - only allow updatable fields
+// FIXED: Victim update validation - only allow updatable fields
 const validateVictimRecordUpdate = (req, res, next) => {
   console.log('🔍 Validating victim record update:', req.body);
   
   const schema = Joi.object({
     // Only fields that can be manually updated
-    address_now: Joi.string().optional().trim(),
-    phone: Joi.string().optional().trim(),
-    victim_email: Joi.string().email().optional().allow('').trim(),
-    sinner_identification: Joi.string().optional().trim(),
-    crime_type: Joi.string().optional().trim(),
-    evidence: Joi.string().optional().trim(),
-    date_committed: Joi.date().optional(),
+    address_now: Joi.string().optional().trim()
+      .messages({
+        'string.empty': '"address_now" cannot be empty if provided'
+      }),
+    phone: Joi.string().optional().trim()
+      .messages({
+        'string.empty': '"phone" cannot be empty if provided'
+      }),
+    victim_email: Joi.string().email().optional().allow('').trim()
+      .messages({
+        'string.email': '"victim_email" must be a valid email if provided'
+      }),
+    sinner_identification: Joi.string().optional().trim()
+      .messages({
+        'string.empty': '"sinner_identification" cannot be empty if provided'
+      }),
+    crime_type: Joi.string().optional().trim()
+      .messages({
+        'string.empty': '"crime_type" cannot be empty if provided'
+      }),
+    evidence: Joi.string().optional().trim()
+      .messages({
+        'string.empty': '"evidence" cannot be empty if provided'
+      }),
+    date_committed: Joi.date().optional()
+      .messages({
+        'date.base': '"date_committed" must be a valid date if provided'
+      }),
     criminal_id: Joi.number().integer().optional().allow(null)
-    // marital_status NOT included - it's auto-filled and shouldn't be updated
-  }).min(1);
+      .messages({
+        'number.base': '"criminal_id" must be a number if provided'
+      })
+  }).min(1)
+  .messages({
+    'object.min': 'At least one field must be provided for update',
+    'any.unknown': 'Field "{{#label}}" is not allowed for update. Only address_now, phone, victim_email, sinner_identification, crime_type, evidence, date_committed, and criminal_id can be updated.'
+  });
 
-  const { error } = schema.validate(req.body);
+  const { error, value } = schema.validate(req.body, {
+    abortEarly: false,
+    allowUnknown: false,
+    stripUnknown: true
+  });
+
   if (error) {
-    console.log('Validation error:', error.details[0].message);
+    console.log('❌ Validation errors:', error.details);
+    
+    // Check if the error is about restricted fields
+    const restrictedFieldError = error.details.find(detail => 
+      detail.context?.key && ['id_type', 'id_number', 'first_name', 'last_name', 'gender', 'date_of_birth', 'province', 'district', 'marital_status'].includes(detail.context.key)
+    );
+
+    if (restrictedFieldError) {
+      return res.status(400).json({
+        success: false,
+        message: `"${restrictedFieldError.context.key}" cannot be updated. Personal details are auto-filled from ID records.`
+      });
+    }
+
+    const errorMessage = error.details.map(detail => detail.message).join(', ');
     return res.status(400).json({
       success: false,
-      message: error.details[0].message
+      message: errorMessage,
+      details: error.details
     });
   }
 
+  // Replace req.body with validated and cleaned data
+  req.body = value;
+  console.log('✅ Validation passed - Cleaned update data:', req.body);
+  next();
+};
+
+
+// Enhanced validation to detect wrong request body
+const validateUserApproval = (req, res, next) => {
+  console.log('🔍 Validating user approval:', req.body);
+  
+  // Check if the request body looks like registration data instead of approval
+  if (req.body.sector || req.body.fullname || req.body.position || req.body.email || req.body.password) {
+    console.log('❌ Wrong request body detected - looks like registration data');
+    return res.status(400).json({
+      success: false,
+      message: 'Wrong request format. For approval, send only { "approved": true/false }'
+    });
+  }
+
+  const schema = Joi.object({
+    approved: Joi.alternatives()
+      .try(
+        Joi.boolean().required(),
+        Joi.string().valid('true', 'false', '1', '0').required()
+      )
+      .messages({
+        'alternatives.types': '"approved" must be either a boolean or string "true"/"false"',
+        'any.required': '"approved" is required'
+      })
+  });
+
+  const { error, value } = schema.validate(req.body, {
+    abortEarly: false,
+    allowUnknown: false
+  });
+
+  if (error) {
+    console.log('❌ Validation errors:', error.details);
+    const errorMessage = error.details.map(detail => detail.message).join(', ');
+    return res.status(400).json({
+      success: false,
+      message: errorMessage
+    });
+  }
+
+  // Convert string to boolean if needed
+  if (typeof value.approved === 'string') {
+    if (value.approved === 'true' || value.approved === '1') {
+      value.approved = true;
+    } else if (value.approved === 'false' || value.approved === '0') {
+      value.approved = false;
+    }
+  }
+
+  req.body = value;
+  console.log('✅ Validation passed:', req.body);
   next();
 };
 
@@ -436,6 +541,7 @@ const validateSearchId = (req, res, next) => {
 
   next();
 };
+
 
 const validatePagination = (req, res, next) => {
   console.log('🔍 Validating pagination:', req.query);

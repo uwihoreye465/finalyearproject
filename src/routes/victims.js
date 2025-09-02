@@ -54,12 +54,34 @@ const { auth } = require('../middleware/auth');
 const { 
   validateVictimRecord, 
   validateVictimRecordUpdate,
-  validatePagination 
+  validatePagination,
+  validateSearchId
 } = require('../middleware/validation');
 
-// All routes require authentication
 router.use(auth);
 
+// Add this at the top of your victims routes file
+router.post('/test', (req, res) => {
+  console.log('✅ Test endpoint hit!');
+  console.log('Request body:', req.body);
+  console.log('Content-Type:', req.get('Content-Type'));
+  console.log('Full headers:', req.headers);
+  
+  res.json({
+    success: true,
+    message: 'Test successful',
+    body: req.body,
+    contentType: req.get('Content-Type')
+  });
+});
+// Statistics and recent data routes (must come before :id routes)
+router.get('/statistics', victimController.getVictimStatistics);
+router.get('/recent', victimController.getRecentVictims);
+
+// Search routes
+router.get('/search/:idNumber', validateSearchId, victimController.searchVictimByIdNumber);
+
+// CRUD routes
 router.post('/', validateVictimRecord, victimController.addVictim);
 router.get('/', validatePagination, victimController.getAllVictims);
 router.get('/:id', victimController.getVictimById);

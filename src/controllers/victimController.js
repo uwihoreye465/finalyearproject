@@ -239,8 +239,8 @@ class VictimController {
       const result = await client.query(
         `INSERT INTO victim 
          (id_type, id_number, address_now, phone, victim_email,
-          sinner_identification, crime_type, evidence, date_committed, criminal_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          sinner_identification, crime_type, evidence, date_committed, criminal_id, registered_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          RETURNING *`,
         [
           id_type, 
@@ -252,7 +252,8 @@ class VictimController {
           crime_type, 
           evidence, 
           date_committed, 
-          criminal_id || null
+          criminal_id || null,
+          req.user?.userId || null
         ]
       );
 
@@ -589,14 +590,14 @@ class VictimController {
 
       // Check if victim is referenced in criminal records
       const criminalReference = await client.query(
-        'SELECT cri_id FROM criminal_record WHERE victim_id = $1',
+        'SELECT cri_id FROM criminal_record WHERE vic_id = $1',
         [id]
       );
 
       if (criminalReference.rows.length > 0) {
         // Update criminal records to remove victim reference
         await client.query(
-          'UPDATE criminal_record SET victim_id = NULL WHERE victim_id = $1',
+          'UPDATE criminal_record SET vic_id = NULL WHERE vic_id = $1',
           [id]
         );
       }

@@ -76,16 +76,26 @@ async updateUserApproval(req, res) {
       id = id.substring(1);
     }
     
-    let { approved } = req.body;
+    // Accept both 'approved' and 'approval' field names for flexibility
+    let { approved, approval } = req.body;
+    
+    // Use approval if approved is not provided (backward compatibility)
+    if (approved === undefined && approval !== undefined) {
+      approved = approval;
+    }
 
-    console.log('🔍 Approving user:', { id, approved, type: typeof approved });
+    console.log('🔍 Approving user:', { id, approved, approval, type: typeof approved });
 
     // Handle missing approved field
     if (approved === undefined) {
       await client.query('ROLLBACK');
       return res.status(400).json({
         success: false,
-        message: 'Missing "approved" field in request body'
+        message: 'Missing "approved" or "approval" field in request body. Provide either { "approved": true/false } or { "approval": "true"/"false" }',
+        example: {
+          option_1: { "approved": true },
+          option_2: { "approval": "true" }
+        }
       });
     }
 
@@ -278,6 +288,247 @@ async getUserById(req, res) {
     }
   }
 
+
+
+  // Change password (Authenticated user)
+async changePassword(req, res) {
+  const client = await pool.connect();
+  
+  try {
+    await client.query('BEGIN');
+
+    const { currentPassword, newPassword } = req.body;
+    const userId = req.user.userId;
+
+    console.log('🔍 Changing password for user:', userId);
+
+    // Validate input
+    if (!currentPassword || !newPassword) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Current password and new password are required'
+      });
+    }
+
+    if (newPassword.length < 8) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be at least 8 characters long'
+      });
+    }
+
+    // Get user with password
+    const userResult = await client.query(
+      'SELECT user_id, password FROM users WHERE user_id = $1',
+      [userId]
+    );
+
+    if (userResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const user = userResult.rows[0];
+
+    // Verify current password
+    const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
+    if (!isPasswordValid) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Current password is incorrect'
+      });
+    }
+
+    // Hash new password
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+
+    // Update password
+    await client.query(
+      'UPDATE users SET password = $1 WHERE user_id = $2',
+      [hashedPassword, userId]
+    );
+
+    await client.query('COMMIT');
+
+    // Send email notification
+    try {
+      await emailService.sendPasswordChangeNotification(user.email, user.fullname);
+    } catch (emailError) {
+      console.error('Password change email failed:', emailError);
+    }
+
+    res.json({
+      success: true,
+      message: 'Password changed successfully'
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Change password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to change password'
+    });
+  } finally {
+    client.release();
+  }
+}
+
+// Forgot password - Initiate reset
+async forgotPassword(req, res) {
+  const client = await pool.connect();
+  
+  try {
+    await client.query('BEGIN');
+
+    const { email } = req.body;
+
+    console.log('🔍 Forgot password request for:', email);
+
+    if (!email) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required'
+      });
+    }
+
+    // Check if user exists
+    const userResult = await client.query(
+      'SELECT user_id, fullname, email FROM users WHERE email = $1',
+      [email.toLowerCase()]
+    );
+
+    if (userResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      // Don't reveal if email exists or not for security
+      return res.json({
+        success: true,
+        message: 'If the email exists, a password reset link has been sent'
+      });
+    }
+
+    const user = userResult.rows[0];
+
+    // Generate reset token (expires in 1 hour)
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+    const tokenExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    // Save reset token to database
+    await client.query(
+      'UPDATE users SET reset_token = $1, reset_token_expiry = $2 WHERE user_id = $3',
+      [tokenHash, tokenExpiry, user.user_id]
+    );
+
+    await client.query('COMMIT');
+
+    // Send reset email
+    try {
+      await emailService.sendPasswordResetEmail(user.email, user.fullname, resetToken, user.user_id);
+      console.log('✅ Password reset email sent to:', user.email);
+    } catch (emailError) {
+      console.error('Password reset email failed:', emailError);
+      await client.query('ROLLBACK');
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send reset email'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'If the email exists, a password reset link has been sent'
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Forgot password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to process forgot password request'
+    });
+  } finally {
+    client.release();
+  }
+}
+
+// Reset password with token
+async resetPassword(req, res) {
+  const client = await pool.connect();
+  
+  try {
+    await client.query('BEGIN');
+
+    const { token } = req.params;
+    const { newPassword } = req.body;
+
+    console.log('🔍 Resetting password with token');
+
+    if (!newPassword || newPassword.length < 8) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be at least 8 characters long'
+      });
+    }
+
+    // Hash the token to compare with stored hash
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+    // Find user with valid reset token
+    const userResult = await client.query(
+      `SELECT user_id, reset_token_expiry 
+       FROM users 
+       WHERE reset_token = $1 AND reset_token_expiry > NOW()`,
+      [tokenHash]
+    );
+
+    if (userResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired reset token'
+      });
+    }
+
+    const user = userResult.rows[0];
+
+    // Hash new password
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+
+    // Update password and clear reset token
+    await client.query(
+      'UPDATE users SET password = $1, reset_token = NULL, reset_token_expiry = NULL WHERE user_id = $2',
+      [hashedPassword, user.user_id]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({
+      success: true,
+      message: 'Password reset successfully'
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Reset password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to reset password'
+    });
+  } finally {
+    client.release();
+  }
+}
   // Get dashboard statistics (Admin only)
   async getDashboardStats(req, res) {
     try {
@@ -295,7 +546,7 @@ async getUserById(req, res) {
         // Recent crimes by type
         pool.query(`
           SELECT crime_type, COUNT(*) as count 
-          FROM sinners_record 
+          FROM criminal_record 
           GROUP BY crime_type 
           ORDER BY count DESC 
           LIMIT 5

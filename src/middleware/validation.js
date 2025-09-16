@@ -454,15 +454,25 @@ const validateRegistration = (req, res, next) => {
   next();
 };
 
+// Login validation
 const validateLogin = (req, res, next) => {
   console.log('🔍 Validating login:', req.body);
   
   const schema = Joi.object({
-    email: Joi.string().email().required().lowercase().trim(),
+    email: Joi.string().email().required().lowercase().trim()
+      .messages({
+        'string.email': '"email" must be a valid email',
+        'string.empty': '"email" cannot be empty',
+        'any.required': '"email" is required'
+      }),
     password: Joi.string().required()
+      .messages({
+        'string.empty': '"password" cannot be empty',
+        'any.required': '"password" is required'
+      })
   });
 
-  const { error } = schema.validate(req.body);
+  const { error, value } = schema.validate(req.body);
   if (error) {
     console.log('Validation error:', error.details[0].message);
     return res.status(400).json({
@@ -471,6 +481,7 @@ const validateLogin = (req, res, next) => {
     });
   }
 
+  req.body = value;
   next();
 };
 
@@ -485,7 +496,24 @@ const validateCriminalRecord = (req, res, next) => {
     crime_type: Joi.string().required().trim(),
     description: Joi.string().optional().allow('').trim(),
     date_committed: Joi.date().optional(),
-    victim_id: Joi.number().integer().optional().allow(null)
+    // Support both vic_id and victim_id for flexibility
+    vic_id: Joi.number().integer().optional().allow(null),
+    victim_id: Joi.number().integer().optional().allow(null),
+    // Allow victim_info for auto-creation
+    victim_info: Joi.object({
+      first_name: Joi.string().optional().trim(),
+      last_name: Joi.string().optional().trim(),
+      gender: Joi.string().optional().trim(),
+      phone: Joi.string().optional().trim(),
+      date_of_birth: Joi.date().optional().allow(null),
+      district: Joi.string().optional().trim(),
+      sector: Joi.string().optional().trim(),
+      cell: Joi.string().optional().trim(),
+      village: Joi.string().optional().trim(),
+      id_type: Joi.string().optional().trim(),
+      id_number: Joi.string().optional().trim(),
+      address_now: Joi.string().optional().trim()
+    }).optional()
   });
 
   const { error } = schema.validate(req.body);
@@ -542,7 +570,89 @@ const validateSearchId = (req, res, next) => {
   next();
 };
 
+// change password
+// Password change validation
+const validateChangePassword = (req, res, next) => {
+  console.log('🔍 Validating change password:', req.body);
+  
+  const schema = Joi.object({
+    currentPassword: Joi.string().required().trim()
+      .messages({
+        'string.empty': '"currentPassword" cannot be empty',
+        'any.required': '"currentPassword" is required'
+      }),
+    newPassword: Joi.string().min(8).required().trim()
+      .messages({
+        'string.empty': '"newPassword" cannot be empty',
+        'string.min': '"newPassword" must be at least 8 characters long',
+        'any.required': '"newPassword" is required'
+      })
+  });
 
+  const { error, value } = schema.validate(req.body);
+  if (error) {
+    console.log('Validation error:', error.details[0].message);
+    return res.status(400).json({
+      success: false,
+      message: error.details[0].message
+    });
+  }
+
+  req.body = value;
+  next();
+};
+
+// Forgot password validation
+const validateForgotPassword = (req, res, next) => {
+  console.log('🔍 Validating forgot password:', req.body);
+  
+  const schema = Joi.object({
+    email: Joi.string().email().required().lowercase().trim()
+      .messages({
+        'string.email': '"email" must be a valid email',
+        'string.empty': '"email" cannot be empty',
+        'any.required': '"email" is required'
+      })
+  });
+
+  const { error, value } = schema.validate(req.body);
+  if (error) {
+    console.log('Validation error:', error.details[0].message);
+    return res.status(400).json({
+      success: false,
+      message: error.details[0].message
+    });
+  }
+
+  req.body = value;
+  next();
+};
+
+// Reset password validation
+const validateResetPassword = (req, res, next) => {
+  console.log('🔍 Validating reset password:', req.body);
+  
+  const schema = Joi.object({
+    newPassword: Joi.string().min(8).required().trim()
+      .messages({
+        'string.empty': '"newPassword" cannot be empty',
+        'string.min': '"newPassword" must be at least 8 characters long',
+        'any.required': '"newPassword" is required'
+      })
+  });
+
+  const { error, value } = schema.validate(req.body);
+  if (error) {
+    console.log('Validation error:', error.details[0].message);
+    return res.status(400).json({
+      success: false,
+      message: error.details[0].message
+    });
+  }
+
+  req.body = value;
+  next();
+};
 const validatePagination = (req, res, next) => {
   console.log('🔍 Validating pagination:', req.query);
   
@@ -576,5 +686,10 @@ module.exports = {
   validateCriminalRecordUpdate,
   validateVictimRecordUpdate,
   validateSearchId,
-  validatePagination
+  validatePagination,
+
+   // ... existing exports ...
+  validateChangePassword,
+  validateForgotPassword,
+  validateResetPassword
 };

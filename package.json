@@ -9,9 +9,11 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.52.1",
+    "axios": "^1.12.2",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^2.4.3",
     "body-parser": "^1.20.3",
+    "connect-pg-simple": "^10.0.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
@@ -23,11 +25,11 @@
     "joi": "^17.9.2",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
-    "nodemailer": "^6.9.3",
+    "nodemailer": "^6.10.1",
     "pg": "^8.16.3"
   },
   "devDependencies": {
-    "nodemon": "^2.0.22"
+    "nodemon": "^3.1.10"
   },
   "keywords": [],
   "author": "",

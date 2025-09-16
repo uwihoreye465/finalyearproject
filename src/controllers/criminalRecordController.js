@@ -142,16 +142,16 @@
 //         crime_type,
 //         description,
 //         date_committed,
-//         victim_id
+//         vic_id
 //       } = req.body;
 
 //       // Insert criminal record (auto-fill trigger will populate personal details)
 //       const result = await client.query(
 //         `INSERT INTO criminal_record 
-//          (id_type, id_number, phone, address_now, crime_type, description, date_committed, victim_id)
+//          (id_type, id_number, phone, address_now, crime_type, description, date_committed, vic_id)
 //          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 //          RETURNING *`,
-//         [id_type, id_number, phone, address_now, crime_type, description, date_committed, victim_id]
+//         [id_type, id_number, phone, address_now, crime_type, description, date_committed, vic_id]
 //       );
 
 //       await client.query('COMMIT');
@@ -565,16 +565,165 @@ class CriminalRecordController {
         crime_type,
         description,
         date_committed,
-        victim_id
+        vic_id,
+        victim_info // Allow victim information to be provided
       } = req.body;
+
+      // SMART AUTO-LINKING: Find existing victim or require victim_info
+      let finalVicId = vic_id || null;
+      
+      // First, try to auto-find existing victim (victims are separate from criminals)
+      if (!vic_id && !victim_info) {
+        try {
+          // Search for most recent victim - this is more flexible
+          // We'll get the most recently created victim if no specific match
+          const recentVictimQuery = `
+            SELECT vic_id, first_name, last_name, phone 
+            FROM victim 
+            ORDER BY created_at DESC 
+            LIMIT 1
+          `;
+          
+          const recentVictim = await client.query(recentVictimQuery);
+          
+          if (recentVictim.rows.length > 0) {
+            finalVicId = recentVictim.rows[0].vic_id;
+            const victimInfo = recentVictim.rows[0];
+            console.log(`🔍 Auto-linking to most recent victim: ${victimInfo.first_name} ${victimInfo.last_name} (ID: ${finalVicId})`);
+          } else {
+            // No victims exist at all - require victim_info to create one
+            return res.status(400).json({
+              success: false,
+              message: 'No victims found in database. A victim must be registered before creating criminal records. Please provide victim_info to create the first victim.',
+              workflow: {
+                step_1: "Create victim first",
+                step_2: "Then create criminal record"
+              },
+              required_victim_info: {
+                first_name: "Required - victim's first name",
+                last_name: "Required - victim's last name", 
+                phone: "Optional but recommended",
+                id_type: "Optional",
+                id_number: "Optional",
+                address_now: "Optional"
+              },
+              example_request: {
+                "id_type": id_type,
+                "id_number": id_number,
+                "crime_type": crime_type,
+                "victim_info": {
+                  "first_name": "John",
+                  "last_name": "Victim",
+                  "phone": "+250788123456"
+                }
+              }
+            });
+          }
+        } catch (searchError) {
+          console.error('Error searching for existing victim:', searchError);
+          return res.status(400).json({
+            success: false,
+            message: 'Error searching for existing victims. Please provide victim_info to create a new victim.',
+            victim_info_required: {
+              first_name: "Required",
+              last_name: "Required",
+              phone: "Optional"
+            }
+          });
+        }
+      }
+      
+      if (victim_info && !vic_id) {
+        // Validate required victim fields
+        if (!victim_info.first_name && !victim_info.last_name) {
+          return res.status(400).json({
+            success: false,
+            message: 'Victim information must include at least first_name or last_name'
+          });
+        }
+        
+        // Create victim record first
+        try {
+          const victimResult = await client.query(
+            `INSERT INTO victim (
+              first_name, last_name, gender, date_of_birth, 
+              phone, district, sector, cell, village, 
+              id_type, id_number, address_now
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            RETURNING vic_id`,
+            [
+              victim_info.first_name || 'Unknown',
+              victim_info.last_name || 'Victim',
+              victim_info.gender || 'unknown',
+              victim_info.date_of_birth || null,
+              victim_info.phone || null,
+              victim_info.district || null,
+              victim_info.sector || null,
+              victim_info.cell || null,
+              victim_info.village || null,
+              victim_info.id_type || 'unknown',
+              victim_info.id_number || null,
+              victim_info.address_now || null
+            ]
+          );
+          
+          finalVicId = victimResult.rows[0].vic_id;
+          console.log(`✅ Created victim with ID: ${finalVicId}`);
+        } catch (victimError) {
+          console.error('Error creating victim:', victimError);
+          await client.query('ROLLBACK');
+          return res.status(400).json({
+            success: false,
+            message: 'Failed to create victim record',
+            error: victimError.message
+          });
+        }
+      }
+      
+      if (vic_id) {
+        // Verify existing victim exists
+        try {
+          const existingVictim = await client.query(
+            'SELECT vic_id FROM victim WHERE vic_id = $1',
+            [vic_id]
+          );
+          
+          if (existingVictim.rows.length === 0) {
+            return res.status(400).json({
+              success: false,
+              message: `Victim with ID ${vic_id} does not exist. Please provide a valid vic_id or victim_info to create a new victim.`
+            });
+          }
+          
+          finalVicId = vic_id;
+          console.log(`✅ Using existing victim ID: ${finalVicId}`);
+        } catch (victimCheckError) {
+          console.error('Error checking victim:', victimCheckError);
+          await client.query('ROLLBACK');
+          return res.status(400).json({
+            success: false,
+            message: 'Failed to verify victim existence'
+          });
+        }
+      }
 
       // Insert criminal record (auto-fill trigger will populate personal details)
       const result = await client.query(
         `INSERT INTO criminal_record 
-         (id_type, id_number, phone, address_now, crime_type, description, date_committed, victim_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         (id_type, id_number, phone, address_now, crime_type, description, date_committed, vic_id, registered_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING *`,
-        [id_type, id_number, phone, address_now, crime_type, description || null, date_committed || null, victim_id || null]
+        [
+          id_type,
+          id_number,
+          phone,
+          address_now,
+          crime_type,
+          description || null,
+          date_committed || null,
+          finalVicId,
+          req.user?.userId || null
+        ]
       );
 
       await client.query('COMMIT');

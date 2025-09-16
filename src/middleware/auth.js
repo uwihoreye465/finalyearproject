@@ -43,6 +43,8 @@ const auth = async (req, res, next) => {
   }
 };
 
+
+
 const adminAuth = (req, res, next) => {
   if (req.user.role !== 'admin') {
     return res.status(403).json({ 
@@ -53,4 +55,28 @@ const adminAuth = (req, res, next) => {
   next();
 };
 
-module.exports = { auth, adminAuth };
+// Role-based authorization middleware
+const authorize = (...roles) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required.'
+      });
+    }
+
+    if (!roles.includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Insufficient privileges.'
+      });
+    }
+
+    next();
+  };
+};
+
+// Alias for backward compatibility
+const authenticate = auth;
+
+module.exports = { auth, adminAuth, authenticate, authorize };

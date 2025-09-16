@@ -176,6 +176,12 @@ async createFirstAdmin(req, res) {
         [user.user_id]
       );
 
+      // Optional session attach without changing API response
+      if (req.session) {
+        req.session.userId = user.user_id;
+        req.session.role = user.role;
+      }
+
       res.json({
         success: true,
         message: 'Login successful',
@@ -254,6 +260,175 @@ async createFirstAdmin(req, res) {
       res.status(500).json({
         success: false,
         message: 'Failed to get profile'
+      });
+    }
+  }
+
+  // Refresh token using provided refresh token (keeps current API pattern additive)
+  async refreshToken(req, res) {
+    try {
+      const { refreshToken } = req.body;
+      if (!refreshToken) {
+        return res.status(400).json({ success: false, message: 'Refresh token is required' });
+      }
+
+      const { verifyToken } = require('../config/jwt');
+      let payload;
+      try {
+        payload = verifyToken(refreshToken);
+      } catch (e) {
+        return res.status(401).json({ success: false, message: 'Invalid refresh token' });
+      }
+
+      // Ensure user still exists and status is valid
+      const result = await pool.query('SELECT user_id, email, role FROM users WHERE user_id = $1', [payload.userId]);
+      if (result.rows.length === 0) {
+        return res.status(401).json({ success: false, message: 'Invalid refresh token' });
+      }
+
+      const { accessToken, refreshToken: newRefreshToken } = generateTokens({
+        userId: result.rows[0].user_id,
+        email: result.rows[0].email,
+        role: result.rows[0].role
+      });
+
+      return res.json({
+        success: true,
+        message: 'Token refreshed',
+        data: { tokens: { accessToken, refreshToken: newRefreshToken } }
+      });
+    } catch (error) {
+      console.error('Refresh token error:', error);
+      res.status(500).json({ success: false, message: 'Failed to refresh token' });
+    }
+  }
+
+  // Forgot password - send reset email
+  async forgotPassword(req, res) {
+    try {
+      const { email } = req.body;
+      if (!email) {
+        return res.status(400).json({ success: false, message: 'Email is required' });
+      }
+
+      // Check if user exists
+      const result = await pool.query('SELECT user_id, email, fullname FROM users WHERE email = $1', [email]);
+      if (result.rows.length === 0) {
+        // For security, do not reveal non-existence
+        return res.json({ success: true, message: 'If an account exists, a reset email has been sent' });
+      }
+
+      const user = result.rows[0];
+      const resetToken = crypto.randomBytes(32).toString('hex');
+
+      // Store hashed token and expiry - check if columns exist first
+      const hashed = await bcrypt.hash(resetToken, 12);
+      const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+      try {
+        // Try to update with reset password columns
+        await pool.query(
+          `UPDATE users SET reset_password_token = $1, reset_password_expires = $2 WHERE user_id = $3`,
+          [hashed, expires, user.user_id]
+        );
+      } catch (dbError) {
+        // If columns don't exist, store in verification_token temporarily
+        console.log('Reset password columns not found, using verification_token');
+        await pool.query(
+          `UPDATE users SET verification_token = $1, created_at = $2 WHERE user_id = $3`,
+          [hashed, expires, user.user_id]
+        );
+      }
+
+      // Send reset email
+      try {
+        await emailService.sendPasswordResetEmail(user.email, resetToken);
+        console.log('Reset email sent successfully');
+      } catch (emailError) {
+        console.error('Email sending failed:', emailError.message);
+        // For development/testing, log the reset token
+        console.log('=== RESET TOKEN FOR TESTING ===');
+        console.log('Email:', user.email);
+        console.log('Reset Token:', resetToken);
+        console.log('Reset URL:', `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`);
+        console.log('================================');
+      }
+
+      return res.json({ success: true, message: 'If an account exists, a reset email has been sent' });
+    } catch (error) {
+      console.error('Forgot password error:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: 'Failed to process request',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
+
+  // Reset password using token
+  async resetPassword(req, res) {
+    try {
+      const { token, password } = req.body;
+      if (!token || !password) {
+        return res.status(400).json({ success: false, message: 'Token and new password are required' });
+      }
+
+      let matching = null;
+
+      try {
+        // Try to find user with reset_password_token columns
+        const users = await pool.query('SELECT user_id, email, fullname, reset_password_token, reset_password_expires FROM users WHERE reset_password_token IS NOT NULL');
+        matching = users.rows.find(u => u.reset_password_token && bcrypt.compareSync(token, u.reset_password_token));
+        
+        if (matching && new Date(matching.reset_password_expires) < new Date()) {
+          return res.status(400).json({ success: false, message: 'Invalid or expired token' });
+        }
+      } catch (dbError) {
+        // If reset_password columns don't exist, try with verification_token
+        console.log('Reset password columns not found, checking verification_token');
+        const users = await pool.query('SELECT user_id, email, fullname, verification_token, created_at FROM users WHERE verification_token IS NOT NULL');
+        matching = users.rows.find(u => u.verification_token && bcrypt.compareSync(token, u.verification_token));
+        
+        if (matching && new Date(matching.created_at) < new Date(Date.now() - 60 * 60 * 1000)) {
+          return res.status(400).json({ success: false, message: 'Invalid or expired token' });
+        }
+      }
+
+      if (!matching) {
+        return res.status(400).json({ success: false, message: 'Invalid or expired token' });
+      }
+
+      const salt = await bcrypt.genSalt(12);
+      const hashed = await bcrypt.hash(password, salt);
+
+      try {
+        // Try to update with reset_password columns
+        await pool.query(
+          `UPDATE users SET password = $1, reset_password_token = NULL, reset_password_expires = NULL WHERE user_id = $2`,
+          [hashed, matching.user_id]
+        );
+      } catch (dbError) {
+        // If columns don't exist, just update password and clear verification_token
+        await pool.query(
+          `UPDATE users SET password = $1, verification_token = NULL WHERE user_id = $2`,
+          [hashed, matching.user_id]
+        );
+      }
+
+      // Notify user
+      try {
+        await emailService.sendPasswordChangeNotification(matching.email, matching.fullname);
+      } catch (e) {
+        console.log('Could not send password change notification:', e.message);
+      }
+
+      return res.json({ success: true, message: 'Password reset successful' });
+    } catch (error) {
+      console.error('Reset password error:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: 'Failed to reset password',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
       });
     }
   }

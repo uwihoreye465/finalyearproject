@@ -20,14 +20,14 @@ const notificationController = require('../controllers/notificationController');
 const { auth } = require('../middleware/auth');
 const { validateNotification } = require('../middleware/validation');
 
-// All routes require authentication
-router.use(auth);
-
+// Public routes (no authentication required)
 router.post('/', validateNotification, notificationController.sendNotification);
 router.get('/', notificationController.getAllNotifications);
 router.get('/:id', notificationController.getNotificationById);
-router.delete('/:id', notificationController.deleteNotification);
 // Add statistics route
 router.get('/stats/rib-statistics', notificationController.getRibStatistics);
+
+// Protected routes (require authentication)
+router.delete('/:id', auth, notificationController.deleteNotification);
 
 module.exports = router;

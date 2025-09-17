@@ -21,16 +21,13 @@ const upload = multer({
     }
 });
 
-// Apply authentication middleware to all routes
-router.use(authenticate);
-
-// Public routes (read-only)
+// Public routes (read-only, no authentication required)
 router.get('/', arrestedController.getAllArrested);
 router.get('/statistics', arrestedController.getStatistics);
 router.get('/:id', arrestedController.getArrestedById);
 
 // Admin/Staff only routes with image upload - with proper error handling
-router.post('/', authorize('admin', 'staff'), (req, res, next) => {
+router.post('/', authenticate, authorize('admin', 'staff'), (req, res, next) => {
     upload.single('image')(req, res, function(err) {
         if (err instanceof multer.MulterError) {
             return res.status(400).json({
@@ -47,7 +44,7 @@ router.post('/', authorize('admin', 'staff'), (req, res, next) => {
     });
 }, arrestedController.createArrested);
 
-router.put('/:id', authorize('admin', 'staff'), (req, res, next) => {
+router.put('/:id', authenticate, authorize('admin', 'staff'), (req, res, next) => {
     upload.single('image')(req, res, function(err) {
         if (err instanceof multer.MulterError) {
             return res.status(400).json({
@@ -64,6 +61,6 @@ router.put('/:id', authorize('admin', 'staff'), (req, res, next) => {
     });
 }, arrestedController.updateArrested);
 
-router.delete('/:id', authorize('admin'), arrestedController.deleteArrested);
+router.delete('/:id', authenticate, authorize('admin'), arrestedController.deleteArrested);
 
 module.exports = router;

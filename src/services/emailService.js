@@ -69,6 +69,17 @@ class EmailService {
     }
 
     async sendVerificationEmail(email, verificationToken, fullname) {
+        // Check if email configuration is available
+        if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+            console.warn('Email configuration missing. Skipping email send.');
+            console.log('=== VERIFICATION TOKEN FOR TESTING ===');
+            console.log('Email:', email);
+            console.log('Verification Token:', verificationToken);
+            console.log('Verification URL:', `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email?token=${verificationToken}`);
+            console.log('=====================================');
+            return { messageId: 'test-message-id' };
+        }
+
         const verifyUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email?token=${verificationToken}`;
         
         const mailOptions = {
@@ -92,10 +103,16 @@ class EmailService {
 
         try {
             const result = await this.transporter.sendMail(mailOptions);
-            console.log('Verification email sent:', result.messageId);
+            console.log('Verification email sent successfully:', result.messageId);
             return result;
         } catch (error) {
-            console.error('Error sending verification email:', error);
+            console.error('Error sending verification email:', error.message);
+            // Log the verification details for testing
+            console.log('=== VERIFICATION TOKEN FOR TESTING ===');
+            console.log('Email:', email);
+            console.log('Verification Token:', verificationToken);
+            console.log('Verification URL:', verifyUrl);
+            console.log('=====================================');
             throw error;
         }
     }

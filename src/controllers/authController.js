@@ -88,12 +88,23 @@ async createFirstAdmin(req, res) {
 
       await client.query('COMMIT');
 
-      // Send verification email
-      await emailService.sendVerificationEmail(email, verificationToken, fullname);
+      // Try to send verification email, but don't fail registration if email fails
+      try {
+        await emailService.sendVerificationEmail(email, verificationToken, fullname);
+        console.log('Verification email sent successfully');
+      } catch (emailError) {
+        console.error('Email sending failed:', emailError.message);
+        // For development/testing, log the verification token
+        console.log('=== VERIFICATION TOKEN FOR TESTING ===');
+        console.log('Email:', email);
+        console.log('Verification Token:', verificationToken);
+        console.log('Verification URL:', `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email?token=${verificationToken}`);
+        console.log('=====================================');
+      }
 
       res.status(201).json({
         success: true,
-        message: 'Registration successful. Please check your email for verification.',
+        message: 'User registered successfully. Please check your email to verify your account.',
         data: {
           user: {
             id: result.rows[0].user_id,
@@ -107,9 +118,18 @@ async createFirstAdmin(req, res) {
     } catch (error) {
       await client.query('ROLLBACK');
       console.error('Registration error:', error);
+      
+      // Check if it's a database constraint error (user already exists)
+      if (error.code === '23505') {
+        return res.status(400).json({
+          success: false,
+          message: 'User already exists with this email'
+        });
+      }
+      
       res.status(500).json({
         success: false,
-        message: 'Registration failed',
+        message: 'Registration failed. Please try again.',
         error: process.env.NODE_ENV === 'development' ? error.message : undefined
       });
     } finally {

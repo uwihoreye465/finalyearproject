@@ -98,7 +98,7 @@ async createFirstAdmin(req, res) {
         console.log('=== VERIFICATION TOKEN FOR TESTING ===');
         console.log('Email:', email);
         console.log('Verification Token:', verificationToken);
-        console.log('Verification URL:', `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email?token=${verificationToken}`);
+        console.log('Verification URL:', `${process.env.FRONTEND_URL || 'http://localhost:6000'}/verify-email?token=${verificationToken}`);
         console.log('=====================================');
       }
 
@@ -370,7 +370,7 @@ async createFirstAdmin(req, res) {
         console.log('=== RESET TOKEN FOR TESTING ===');
         console.log('Email:', user.email);
         console.log('Reset Token:', resetToken);
-        console.log('Reset URL:', `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`);
+        console.log('Reset URL:', `${process.env.FRONTEND_URL || 'http://localhost:6000'}/reset-password?token=${resetToken}`);
         console.log('================================');
       }
 

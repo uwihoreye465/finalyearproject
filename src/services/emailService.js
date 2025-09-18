@@ -36,7 +36,7 @@ class EmailService {
     }
 
     async sendPasswordResetEmail(email, resetToken) {
-        const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
+        const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:6000'}/reset-password?token=${resetToken}`;
         
         const mailOptions = {
             from: process.env.EMAIL_USER,
@@ -75,12 +75,12 @@ class EmailService {
             console.log('=== VERIFICATION TOKEN FOR TESTING ===');
             console.log('Email:', email);
             console.log('Verification Token:', verificationToken);
-            console.log('Verification URL:', `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email?token=${verificationToken}`);
+            console.log('Verification URL:', `${process.env.FRONTEND_URL || 'http://localhost:6000'}/verify-email?token=${verificationToken}`);
             console.log('=====================================');
             return { messageId: 'test-message-id' };
         }
 
-        const verifyUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email?token=${verificationToken}`;
+        const verifyUrl = `${process.env.FRONTEND_URL || 'http://localhost:6000'}/verify-email?token=${verificationToken}`;
         
         const mailOptions = {
             from: process.env.EMAIL_USER,

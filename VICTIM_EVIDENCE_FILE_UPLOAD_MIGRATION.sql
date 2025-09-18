@@ -8,8 +8,32 @@ FROM information_schema.columns
 WHERE table_name = 'victim' 
 AND column_name = 'evidence';
 
--- If the column is currently TEXT, we need to change it to JSONB
--- This will allow us to store structured data with files and descriptions
+-- Check existing data to see what we're working with
+SELECT vic_id, evidence, LENGTH(evidence) as evidence_length
+FROM victim 
+WHERE evidence IS NOT NULL 
+LIMIT 10;
+
+-- Step 1: Create a backup column to preserve existing data
+ALTER TABLE victim ADD COLUMN evidence_backup TEXT;
+UPDATE victim SET evidence_backup = evidence WHERE evidence IS NOT NULL;
+
+-- Step 2: Convert existing text evidence to proper JSON format
+-- This handles cases where evidence is just plain text
+UPDATE victim 
+SET evidence = CASE 
+  WHEN evidence IS NULL THEN NULL
+  WHEN evidence = '' THEN NULL
+  WHEN evidence ~ '^\{.*\}$' THEN evidence::JSONB  -- Already JSON
+  ELSE json_build_object(
+    'description', evidence,
+    'files', '[]'::json,
+    'uploadedAt', NOW()::text
+  )::text
+END
+WHERE evidence IS NOT NULL;
+
+-- Step 3: Now convert the column type to JSONB
 ALTER TABLE victim 
 ALTER COLUMN evidence TYPE JSONB USING evidence::JSONB;
 

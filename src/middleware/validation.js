@@ -536,7 +536,22 @@ const validateNotification = (req, res, next) => {
     fullname: Joi.string().required().trim(),
     address: Joi.string().required().trim(),
     phone: Joi.string().required().trim(),
-    message: Joi.string().required().trim()
+    message: Joi.string().required().trim(),
+    // GPS coordinates are optional
+    latitude: Joi.number().min(-90).max(90).optional().allow(null)
+      .messages({
+        'number.min': 'Latitude must be between -90 and 90 degrees',
+        'number.max': 'Latitude must be between -90 and 90 degrees'
+      }),
+    longitude: Joi.number().min(-180).max(180).optional().allow(null)
+      .messages({
+        'number.min': 'Longitude must be between -180 and 180 degrees',
+        'number.max': 'Longitude must be between -180 and 180 degrees'
+      }),
+    location_name: Joi.string().optional().allow('').trim()
+      .messages({
+        'string.empty': 'Location name cannot be empty if provided'
+      })
   });
 
   const { error } = schema.validate(req.body);

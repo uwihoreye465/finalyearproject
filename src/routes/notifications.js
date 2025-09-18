@@ -23,6 +23,8 @@ const { validateNotification } = require('../middleware/validation');
 // Public routes (no authentication required)
 router.post('/', validateNotification, notificationController.sendNotification);
 router.get('/', notificationController.getAllNotifications);
+router.get('/location', notificationController.getNotificationsByLocation);
+router.get('/device-info/:id', notificationController.getNotificationDeviceInfo);
 router.get('/:id', notificationController.getNotificationById);
 // Add statistics route
 router.get('/stats/rib-statistics', notificationController.getRibStatistics);

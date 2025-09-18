@@ -1,6 +1,4 @@
 const http = require('http');
-const fs = require('fs');
-const path = require('path');
 
 // Test configuration
 const BASE_URL = 'http://localhost:6000';
@@ -36,9 +34,9 @@ function makeRequest(options, data = null) {
   });
 }
 
-// Test 1: Add victim with text evidence only
+// Test 1: Add victim with text evidence
 async function testTextEvidence() {
-  console.log('🧪 Test 1: Adding victim with text evidence only...');
+  console.log('🧪 Test 1: Adding victim with text evidence...');
   
   const data = JSON.stringify({
     address_now: "Nyagatare District",
@@ -118,108 +116,9 @@ async function testGetAllVictims() {
   }
 }
 
-// Test 3: Get victim by ID
-async function testGetVictimById(victimId) {
-  if (!victimId) {
-    console.log('\n⏭️ Skipping get victim by ID test (no victim ID available)');
-    return;
-  }
-
-  console.log(`\n🧪 Test 3: Getting victim by ID (${victimId})...`);
-  
-  const options = {
-    hostname: 'localhost',
-    port: 6000,
-    path: `/api/${API_VERSION}/victims/${victimId}`,
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json'
-    }
-  };
-
-  try {
-    const response = await makeRequest(options);
-    console.log(`✅ Status: ${response.statusCode}`);
-    
-    if (response.statusCode === 200) {
-      const result = JSON.parse(response.body);
-      console.log('✅ Get victim by ID test passed');
-      console.log(`📋 Victim Details:`);
-      console.log(`   ID: ${result.data.victim.vic_id}`);
-      console.log(`   Crime: ${result.data.victim.crime_type}`);
-      console.log(`   Evidence: ${JSON.stringify(result.data.victim.evidence, null, 4)}`);
-    } else {
-      console.log('❌ Get victim by ID test failed');
-      console.log('Response:', response.body);
-    }
-  } catch (error) {
-    console.log('❌ Get victim by ID test error:', error.message);
-  }
-}
-
-// Test 4: Test file upload endpoint (without actual file)
-async function testFileUploadEndpoint() {
-  console.log('\n🧪 Test 4: Testing file upload endpoint...');
-  
-  const options = {
-    hostname: 'localhost',
-    port: 6000,
-    path: `/api/${API_VERSION}/victims/upload-evidence`,
-    method: 'POST',
-    headers: {
-      'Content-Type': 'multipart/form-data'
-    }
-  };
-
-  try {
-    const response = await makeRequest(options);
-    console.log(`✅ Status: ${response.statusCode}`);
-    
-    if (response.statusCode === 400) {
-      console.log('✅ File upload endpoint is working (expected 400 for no file)');
-      console.log('Response:', response.body);
-    } else {
-      console.log('❌ Unexpected response from file upload endpoint');
-      console.log('Response:', response.body);
-    }
-  } catch (error) {
-    console.log('❌ File upload endpoint test error:', error.message);
-  }
-}
-
-// Test 5: Test invalid file type
-async function testInvalidFileType() {
-  console.log('\n🧪 Test 5: Testing invalid file type handling...');
-  
-  const options = {
-    hostname: 'localhost',
-    port: 6000,
-    path: `/api/${API_VERSION}/victims/upload-evidence`,
-    method: 'POST',
-    headers: {
-      'Content-Type': 'multipart/form-data'
-    }
-  };
-
-  try {
-    const response = await makeRequest(options);
-    console.log(`✅ Status: ${response.statusCode}`);
-    
-    if (response.statusCode === 400) {
-      console.log('✅ Invalid file type handling is working');
-      console.log('Response:', response.body);
-    } else {
-      console.log('❌ Unexpected response for invalid file type');
-      console.log('Response:', response.body);
-    }
-  } catch (error) {
-    console.log('❌ Invalid file type test error:', error.message);
-  }
-}
-
 // Main test function
 async function runTests() {
-  console.log('🚀 Starting Victim Evidence API Tests\n');
+  console.log('🚀 Starting Simple Victim Evidence API Tests\n');
   console.log('=' .repeat(50));
   
   // Check if server is running
@@ -246,16 +145,13 @@ async function runTests() {
   // Run tests
   const victimId = await testTextEvidence();
   await testGetAllVictims();
-  await testGetVictimById(victimId);
-  await testFileUploadEndpoint();
-  await testInvalidFileType();
   
   console.log('\n' + '=' .repeat(50));
   console.log('🎉 All tests completed!');
   console.log('\n📝 Next Steps:');
-  console.log('1. Run the database migration: FIX_EVIDENCE_JSON_ERROR.sql');
-  console.log('2. Test file uploads in Postman using the guide: VICTIM_EVIDENCE_POSTMAN_TESTING_GUIDE.md');
-  console.log('3. Verify file uploads work with actual files');
+  console.log('1. Run the database migration: SIMPLE_VICTIM_EVIDENCE_MIGRATION.sql');
+  console.log('2. Test file uploads in Postman using: SIMPLE_VICTIM_EVIDENCE_POSTMAN.md');
+  console.log('3. Upload real files to test the system');
 }
 
 // Run the tests

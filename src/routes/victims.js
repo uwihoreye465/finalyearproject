@@ -57,6 +57,7 @@ const {
   validatePagination,
   validateSearchId
 } = require('../middleware/validation');
+const { uploadSingle, uploadMultiple, handleUploadError } = require('../middleware/upload');
 
 router.use(auth);
 
@@ -81,8 +82,14 @@ router.get('/recent', victimController.getRecentVictims);
 // Search routes
 router.get('/search/:idNumber', validateSearchId, victimController.searchVictimByIdNumber);
 
+// File upload routes for evidence
+router.post('/upload-evidence', uploadSingle, handleUploadError, victimController.uploadEvidence);
+router.post('/upload-multiple-evidence', uploadMultiple, handleUploadError, victimController.uploadMultipleEvidence);
+router.get('/evidence/:filename', victimController.getEvidenceFile);
+router.delete('/evidence/:filename', victimController.deleteEvidenceFile);
+
 // CRUD routes
-router.post('/', validateVictimRecord, victimController.addVictim);
+router.post('/', uploadMultiple, validateVictimRecord, victimController.addVictim);
 router.get('/', validatePagination, victimController.getAllVictims);
 router.get('/:id', victimController.getVictimById);
 router.put('/:id', validateVictimRecordUpdate, victimController.updateVictim);

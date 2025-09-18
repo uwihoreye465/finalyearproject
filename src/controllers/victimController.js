@@ -187,9 +187,129 @@
 
 const pool = require('../config/database');
 const { paginate } = require('../utils/pagination');
+const { uploadSingle, uploadMultiple, handleUploadError, deleteFile, getFileUrl } = require('../middleware/upload');
+const path = require('path');
+const fs = require('fs');
 
 class VictimController {
-  // Add new victim record - CORRECTED
+  // Upload evidence files for victim
+  async uploadEvidence(req, res) {
+    uploadSingle(req, res, (err) => {
+      if (err) {
+        return handleUploadError(err, req, res);
+      }
+
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          message: 'No file uploaded. Please select a file to upload.'
+        });
+      }
+
+      const fileUrl = getFileUrl(req, req.file.filename);
+      
+      res.status(200).json({
+        success: true,
+        message: 'Evidence file uploaded successfully',
+        data: {
+          filename: req.file.filename,
+          originalName: req.file.originalname,
+          fileSize: req.file.size,
+          fileType: req.file.mimetype,
+          fileUrl: fileUrl,
+          uploadedAt: new Date().toISOString()
+        }
+      });
+    });
+  }
+
+  // Upload multiple evidence files for victim
+  async uploadMultipleEvidence(req, res) {
+    uploadMultiple(req, res, (err) => {
+      if (err) {
+        return handleUploadError(err, req, res);
+      }
+
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'No files uploaded. Please select files to upload.'
+        });
+      }
+
+      const uploadedFiles = req.files.map(file => ({
+        filename: file.filename,
+        originalName: file.originalname,
+        fileSize: file.size,
+        fileType: file.mimetype,
+        fileUrl: getFileUrl(req, file.filename),
+        uploadedAt: new Date().toISOString()
+      }));
+      
+      res.status(200).json({
+        success: true,
+        message: `${req.files.length} evidence files uploaded successfully`,
+        data: {
+          files: uploadedFiles,
+          totalFiles: req.files.length,
+          totalSize: req.files.reduce((sum, file) => sum + file.size, 0)
+        }
+      });
+    });
+  }
+
+  // Get evidence file
+  async getEvidenceFile(req, res) {
+    try {
+      const { filename } = req.params;
+      const filePath = path.join(__dirname, '../../uploads/evidence', filename);
+      
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({
+          success: false,
+          message: 'Evidence file not found'
+        });
+      }
+
+      res.download(filePath, filename);
+    } catch (error) {
+      console.error('Error serving evidence file:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error serving evidence file'
+      });
+    }
+  }
+
+  // Delete evidence file
+  async deleteEvidenceFile(req, res) {
+    try {
+      const { filename } = req.params;
+      const filePath = path.join(__dirname, '../../uploads/evidence', filename);
+      
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({
+          success: false,
+          message: 'Evidence file not found'
+        });
+      }
+
+      deleteFile(filePath);
+      
+      res.status(200).json({
+        success: true,
+        message: 'Evidence file deleted successfully'
+      });
+    } catch (error) {
+      console.error('Error deleting evidence file:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error deleting evidence file'
+      });
+    }
+  }
+
+  // Add new victim record with file upload support
   async addVictim(req, res) {
     const client = await pool.connect();
 
@@ -204,10 +324,22 @@ class VictimController {
         victim_email,
         sinner_identification,
         crime_type,
-        evidence,
+        evidence_description,
         date_committed,
         criminal_id
       } = req.body;
+
+      // Handle file uploads if any
+      let evidenceFiles = [];
+      if (req.files && req.files.length > 0) {
+        evidenceFiles = req.files.map(file => ({
+          filename: file.filename,
+          originalName: file.originalname,
+          fileSize: file.size,
+          fileType: file.mimetype,
+          fileUrl: getFileUrl(req, file.filename)
+        }));
+      }
 
       console.log('Received victim data:', req.body);
 
@@ -235,6 +367,13 @@ class VictimController {
         });
       }
 
+      // Prepare evidence data (files + description)
+      const evidenceData = {
+        description: evidence_description || null,
+        files: evidenceFiles,
+        uploadedAt: new Date().toISOString()
+      };
+
       // Insert victim record (marital_status will be auto-filled by trigger)
       const result = await client.query(
         `INSERT INTO victim 
@@ -250,7 +389,7 @@ class VictimController {
           victim_email || null,
           sinner_identification, 
           crime_type, 
-          evidence, 
+          JSON.stringify(evidenceData), // Store as JSON
           date_committed, 
           criminal_id || null,
           req.user?.userId || null
@@ -262,7 +401,14 @@ class VictimController {
       res.status(201).json({
         success: true,
         message: 'Victim record added successfully',
-        data: { victim: result.rows[0] }
+        data: { 
+          victim: result.rows[0],
+          evidence: {
+            files: evidenceFiles,
+            totalFiles: evidenceFiles.length,
+            hasDescription: !!evidence_description
+          }
+        }
       });
 
     } catch (error) {

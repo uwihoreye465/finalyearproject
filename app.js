@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const path = require('path');
 require('dotenv').config();
 
 
@@ -143,6 +144,9 @@ app.use(limiter);
 // Body parsing middleware - MUST come before routes
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Static file serving for uploads
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // ✅ ADD THIS: Handle text/plain content type (for Postman issues)
 app.use((req, res, next) => {

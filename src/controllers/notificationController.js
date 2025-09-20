@@ -477,6 +477,75 @@ class NotificationController {
         FROM notification
       `);
 
+      // Get additional comprehensive statistics
+      const additionalStats = await pool.query(`
+        SELECT 
+          -- Time-based statistics
+          COUNT(CASE WHEN created_at >= NOW() - INTERVAL '24 hours' THEN 1 END) as messages_last_24h,
+          COUNT(CASE WHEN created_at >= NOW() - INTERVAL '7 days' THEN 1 END) as messages_last_7d,
+          COUNT(CASE WHEN created_at >= NOW() - INTERVAL '30 days' THEN 1 END) as messages_last_30d,
+          
+          -- GPS coverage statistics
+          ROUND(
+            (COUNT(CASE WHEN latitude IS NOT NULL AND longitude IS NOT NULL THEN 1 END)::DECIMAL / 
+             NULLIF(COUNT(*), 0)) * 100, 2
+          ) as gps_coverage_percentage,
+          
+          -- Read rate statistics
+          ROUND(
+            (COUNT(CASE WHEN is_read = true THEN 1 END)::DECIMAL / 
+             NULLIF(COUNT(*), 0)) * 100, 2
+          ) as read_rate_percentage,
+          
+          -- Average messages per RIB
+          ROUND(COUNT(*)::DECIMAL / NULLIF(COUNT(DISTINCT near_rib), 0), 2) as avg_messages_per_rib,
+          
+          -- Most active RIB
+          (SELECT near_rib FROM notification 
+           WHERE near_rib IS NOT NULL 
+           GROUP BY near_rib 
+           ORDER BY COUNT(*) DESC 
+           LIMIT 1) as most_active_rib,
+           
+          -- Most active RIB count
+          (SELECT COUNT(*) FROM notification 
+           WHERE near_rib = (
+             SELECT near_rib FROM notification 
+             WHERE near_rib IS NOT NULL 
+             GROUP BY near_rib 
+             ORDER BY COUNT(*) DESC 
+             LIMIT 1
+           )) as most_active_rib_count
+        FROM notification
+      `);
+
+      // Get location statistics
+      const locationStats = await pool.query(`
+        SELECT 
+          location_name,
+          COUNT(*) as message_count
+        FROM notification 
+        WHERE location_name IS NOT NULL 
+        GROUP BY location_name 
+        ORDER BY COUNT(*) DESC 
+        LIMIT 10
+      `);
+
+      // Get recent activity (last 10 notifications)
+      const recentActivity = await pool.query(`
+        SELECT 
+          not_id,
+          near_rib,
+          fullname,
+          message,
+          created_at,
+          is_read,
+          CASE WHEN latitude IS NOT NULL AND longitude IS NOT NULL THEN true ELSE false END as has_gps
+        FROM notification 
+        ORDER BY created_at DESC 
+        LIMIT 10
+      `);
+
       res.json({
         success: true,
         data: {
@@ -496,8 +565,38 @@ class NotificationController {
             total_with_gps: overallStats.rows[0].total_with_gps,
             total_ribs: overallStats.rows[0].total_ribs
           },
+          comprehensive_statistics: {
+            time_based: {
+              messages_last_24h: additionalStats.rows[0].messages_last_24h,
+              messages_last_7d: additionalStats.rows[0].messages_last_7d,
+              messages_last_30d: additionalStats.rows[0].messages_last_30d
+            },
+            coverage_metrics: {
+              gps_coverage_percentage: additionalStats.rows[0].gps_coverage_percentage,
+              read_rate_percentage: additionalStats.rows[0].read_rate_percentage,
+              avg_messages_per_rib: additionalStats.rows[0].avg_messages_per_rib
+            },
+            activity_metrics: {
+              most_active_rib: additionalStats.rows[0].most_active_rib,
+              most_active_rib_count: additionalStats.rows[0].most_active_rib_count
+            }
+          },
+          location_statistics: locationStats.rows.map(loc => ({
+            location_name: loc.location_name,
+            message_count: loc.message_count
+          })),
+          recent_activity: recentActivity.rows.map(activity => ({
+            not_id: activity.not_id,
+            near_rib: activity.near_rib,
+            fullname: activity.fullname,
+            message: activity.message,
+            created_at: activity.created_at,
+            is_read: activity.is_read,
+            has_gps: activity.has_gps
+          })),
           timeframe: "all",
-          filtered_rib: "all"
+          filtered_rib: "all",
+          generated_at: new Date().toISOString()
         }
       });
     } catch (error) {

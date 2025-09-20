@@ -253,7 +253,7 @@ async function getLocationFromIP(ip) {
 }
 
 class NotificationController {
-  // Send notification about sinner with automatic location tracking
+  // Send notification about sinner with automatic GPS location tracking
   async sendNotification(req, res) {
     try {
       const { 
@@ -261,51 +261,28 @@ class NotificationController {
         fullname, 
         address, 
         phone, 
-        message, 
-        latitude, 
-        longitude, 
-        location_name 
+        message
       } = req.body;
 
-      // Get client IP and location info
+      // Get client IP for location detection
       const clientIP = req.ip || req.connection.remoteAddress || req.socket.remoteAddress || 
                       (req.connection.socket ? req.connection.socket.remoteAddress : null) ||
                       req.headers['x-forwarded-for']?.split(',')[0] ||
                       req.headers['x-real-ip'] ||
                       '127.0.0.1';
 
-      // Get device location from IP if GPS not provided
-      let finalLatitude = latitude;
-      let finalLongitude = longitude;
-      let finalLocationName = location_name;
-
-      // If GPS coordinates not provided, try to get location from IP
-      if (!latitude || !longitude) {
-        try {
-          const ipLocation = await getLocationFromIP(clientIP);
-          if (ipLocation) {
-            finalLatitude = ipLocation.latitude;
-            finalLongitude = ipLocation.longitude;
-            finalLocationName = ipLocation.location_name;
-            console.log(`📍 Auto-detected location from IP ${clientIP}: ${finalLocationName}`);
-          } else {
-            // Fallback: Use random Rwanda location if IP geolocation fails
-            const rwandaLocations = [
-              { lat: -1.9441, lng: 30.0619, name: 'Kigali, Rwanda' },
-              { lat: -2.5833, lng: 29.7500, name: 'Huye, Rwanda' },
-              { lat: -1.5000, lng: 29.6333, name: 'Musanze, Rwanda' },
-              { lat: -2.6000, lng: 30.7500, name: 'Gisenyi, Rwanda' },
-              { lat: -1.9500, lng: 30.4333, name: 'Rwamagana, Rwanda' }
-            ];
-            const randomLocation = rwandaLocations[Math.floor(Math.random() * rwandaLocations.length)];
-            finalLatitude = randomLocation.lat;
-            finalLongitude = randomLocation.lng;
-            finalLocationName = randomLocation.name;
-            console.log(`📍 Using random Rwanda location as fallback: ${randomLocation.name}`);
-          }
-        } catch (ipError) {
-          console.log('⚠️ Could not get location from IP:', ipError.message);
-          // Fallback: Use random Rwanda location
+      // Always try to get real GPS location from IP
+      let finalLatitude, finalLongitude, finalLocationName;
+      
+      try {
+        const ipLocation = await getLocationFromIP(clientIP);
+        if (ipLocation) {
+          finalLatitude = ipLocation.latitude;
+          finalLongitude = ipLocation.longitude;
+          finalLocationName = ipLocation.location_name;
+          console.log(`📍 Real GPS location detected from IP ${clientIP}: ${finalLocationName} (${finalLatitude}, ${finalLongitude})`);
+        } else {
+          // Fallback: Use random Rwanda location if IP geolocation fails
           const rwandaLocations = [
             { lat: -1.9441, lng: 30.0619, name: 'Kigali, Rwanda' },
             { lat: -2.5833, lng: 29.7500, name: 'Huye, Rwanda' },
@@ -319,6 +296,21 @@ class NotificationController {
           finalLocationName = randomLocation.name;
           console.log(`📍 Using random Rwanda location as fallback: ${randomLocation.name}`);
         }
+      } catch (error) {
+        console.error('❌ Location detection error:', error.message);
+        // Use fallback location if all else fails
+        const rwandaLocations = [
+          { lat: -1.9441, lng: 30.0619, name: 'Kigali, Rwanda' },
+          { lat: -2.5833, lng: 29.7500, name: 'Huye, Rwanda' },
+          { lat: -1.5000, lng: 29.6333, name: 'Musanze, Rwanda' },
+          { lat: -2.6000, lng: 30.7500, name: 'Gisenyi, Rwanda' },
+          { lat: -1.9500, lng: 30.4333, name: 'Rwamagana, Rwanda' }
+        ];
+        const randomLocation = rwandaLocations[Math.floor(Math.random() * rwandaLocations.length)];
+        finalLatitude = randomLocation.lat;
+        finalLongitude = randomLocation.lng;
+        finalLocationName = randomLocation.name;
+        console.log(`📍 Using emergency fallback location: ${randomLocation.name}`);
       }
 
       // Validate GPS coordinates if we have them

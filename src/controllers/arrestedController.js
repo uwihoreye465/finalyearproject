@@ -1,4 +1,6 @@
 const Arrested = require('../models/Arrested');
+const path = require('path');
+const fs = require('fs');
 
 const createArrested = async (req, res) => {
     try {
@@ -9,7 +11,6 @@ const createArrested = async (req, res) => {
             arrest_location,
             id_type,
             id_number,
-            image_url,
             criminal_record_id // Allow criminal_record_id to be provided
         } = req.body;
 
@@ -30,13 +31,12 @@ const createArrested = async (req, res) => {
             });
         }
 
-        let finalImageUrl = image_url || null;
-
-        // Handle image upload if provided (placeholder for now)
+        // Handle image upload
+        let finalImageUrl = null;
         if (req.file) {
-            // For now, we'll skip image upload since storage isn't configured
-            console.log('Image upload attempted but not configured yet');
-            // TODO: Implement actual file upload logic here
+            // File is already saved by multer, just generate the URL
+            finalImageUrl = `/uploads/arrested/${req.file.filename}`;
+            console.log(`📸 Image uploaded successfully: ${finalImageUrl}`);
         }
 
         // Validate criminal_record_id if provided

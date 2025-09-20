@@ -1,12 +1,29 @@
 const express = require('express');
 const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const router = express.Router();
 
 // Import controller and middleware
 const arrestedController = require('../controllers/arrestedController');
 const { authenticate, authorize } = require('../middleware/auth');
 // Configure multer for file uploads
-const storage = multer.memoryStorage();
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        const uploadsDir = path.join(__dirname, '../uploads/arrested');
+        // Create directory if it doesn't exist
+        if (!fs.existsSync(uploadsDir)) {
+            fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+        cb(null, uploadsDir);
+    },
+    filename: function (req, file, cb) {
+        const fileExtension = path.extname(file.originalname);
+        const fileName = `arrested_${Date.now()}_${Math.random().toString(36).substring(7)}${fileExtension}`;
+        cb(null, fileName);
+    }
+});
+
 const upload = multer({
     storage: storage,
     limits: {

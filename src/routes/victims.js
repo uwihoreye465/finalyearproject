@@ -85,6 +85,7 @@ router.get('/search/:idNumber', validateSearchId, victimController.searchVictimB
 // File upload routes for evidence
 router.post('/upload-evidence', uploadSingle, handleUploadError, victimController.uploadEvidence);
 router.post('/upload-multiple-evidence', uploadMultiple, handleUploadError, victimController.uploadMultipleEvidence);
+router.post('/:victimId/upload-evidence', uploadMultiple, handleUploadError, victimController.uploadVictimEvidence);
 router.get('/evidence/:filename', victimController.getEvidenceFile);
 router.delete('/evidence/:filename', victimController.deleteEvidenceFile);
 

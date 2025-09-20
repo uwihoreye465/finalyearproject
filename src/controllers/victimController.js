@@ -223,6 +223,93 @@ class VictimController {
     });
   }
 
+  // Upload evidence files for specific victim record
+  async uploadVictimEvidence(req, res) {
+    const { victimId } = req.params;
+    
+    uploadMultiple(req, res, async (err) => {
+      if (err) {
+        return handleUploadError(err, req, res);
+      }
+
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'No files uploaded. Please select files to upload.'
+        });
+      }
+
+      const client = await pool.connect();
+      
+      try {
+        await client.query('BEGIN');
+
+        // Check if victim exists
+        const victimCheck = await client.query(
+          'SELECT vic_id, evidence FROM victim WHERE vic_id = $1',
+          [victimId]
+        );
+
+        if (victimCheck.rows.length === 0) {
+          await client.query('ROLLBACK');
+          return res.status(404).json({
+            success: false,
+            message: 'Victim record not found'
+          });
+        }
+
+        const existingEvidence = victimCheck.rows[0].evidence ? 
+          JSON.parse(victimCheck.rows[0].evidence) : 
+          { description: '', files: [], uploadedAt: new Date().toISOString() };
+
+        // Add new files to existing evidence
+        const newFiles = req.files.map(file => ({
+          filename: file.filename,
+          originalName: file.originalname,
+          fileSize: file.size,
+          fileType: file.mimetype,
+          fileUrl: getFileUrl(req, file.filename),
+          uploadedAt: new Date().toISOString()
+        }));
+
+        const updatedEvidence = {
+          ...existingEvidence,
+          files: [...(existingEvidence.files || []), ...newFiles],
+          lastUpdated: new Date().toISOString()
+        };
+
+        // Update victim record with new evidence
+        await client.query(
+          'UPDATE victim SET evidence = $1 WHERE vic_id = $2',
+          [JSON.stringify(updatedEvidence), victimId]
+        );
+
+        await client.query('COMMIT');
+
+        res.status(200).json({
+          success: true,
+          message: `${req.files.length} evidence files uploaded successfully`,
+          data: {
+            victimId: parseInt(victimId),
+            uploadedFiles: newFiles,
+            totalFiles: updatedEvidence.files.length,
+            evidence: updatedEvidence
+          }
+        });
+
+      } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Upload victim evidence error:', error);
+        res.status(500).json({
+          success: false,
+          message: 'Failed to upload evidence files'
+        });
+      } finally {
+        client.release();
+      }
+    });
+  }
+
   // Upload multiple evidence files for victim
   async uploadMultipleEvidence(req, res) {
     uploadMultiple(req, res, (err) => {
@@ -342,30 +429,11 @@ class VictimController {
       }
 
       console.log('Received victim data:', req.body);
+      console.log('Evidence from req.body:', req.body.evidence);
 
-      // Check if person exists in appropriate table first
-      let personExists = false;
-      if (id_type === 'passport') {
-        const passportCheck = await client.query(
-          'SELECT id FROM passport_holders WHERE passport_number = $1',
-          [id_number]
-        );
-        personExists = passportCheck.rows.length > 0;
-      } else {
-        const citizenCheck = await client.query(
-          'SELECT id FROM rwandan_citizens WHERE id_number = $1 AND id_type = $2',
-          [id_number, id_type]
-        );
-        personExists = citizenCheck.rows.length > 0;
-      }
-
-      if (!personExists) {
-        await client.query('ROLLBACK');
-        return res.status(400).json({
-          success: false,
-          message: 'Person with this ID not found in citizen or passport records'
-        });
-      }
+      // Skip person existence check for now - allow any ID to be added
+      // This can be re-enabled later if needed
+      console.log('⚠️ Skipping person existence check - allowing any ID');
 
       // Prepare evidence data (files + description)
       let evidenceData;

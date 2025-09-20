@@ -126,7 +126,7 @@ class NotificationController {
       console.log('📍 GPS Data:', { finalLatitude, finalLongitude, finalLocationName });
       
       const result = await pool.query(
-        `INSERT INTO notification (near_rib, fullname, address, phone, message, gps_latitude, gps_longitude, location_name)
+        `INSERT INTO notification (near_rib, fullname, address, phone, message, latitude, longitude, location_name)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
         [near_rib, fullname, address, phone, message, finalLatitude || null, finalLongitude || null, finalLocationName || null]
       );
@@ -187,9 +187,9 @@ class NotificationController {
       const result = await pool.query(
         `SELECT 
            not_id, near_rib, fullname, address, phone, message, created_at, is_read,
-           gps_latitude, gps_longitude, location_name,
+           latitude, longitude, location_name,
            CASE 
-             WHEN gps_latitude IS NOT NULL AND gps_longitude IS NOT NULL THEN true 
+             WHEN latitude IS NOT NULL AND longitude IS NOT NULL THEN true 
              ELSE false 
            END as has_gps_location
          FROM notification 
@@ -200,14 +200,14 @@ class NotificationController {
 
       // Format notifications with GPS data and Google Maps links
       const notifications = result.rows.map(notification => {
-        const googleMapsLink = (notification.gps_latitude && notification.gps_longitude) ? 
-                               `https://www.google.com/maps?q=${notification.gps_latitude},${notification.gps_longitude}` : null;
+        const googleMapsLink = (notification.latitude && notification.longitude) ? 
+                               `https://www.google.com/maps?q=${notification.latitude},${notification.longitude}` : null;
         
         return {
           ...notification,
           gps_location: notification.has_gps_location ? {
-            latitude: parseFloat(notification.gps_latitude),
-            longitude: parseFloat(notification.gps_longitude),
+            latitude: parseFloat(notification.latitude),
+            longitude: parseFloat(notification.longitude),
             location_name: notification.location_name || 'Unknown Location',
             google_maps_link: googleMapsLink
           } : null,
@@ -240,9 +240,9 @@ class NotificationController {
       const result = await pool.query(
         `SELECT 
            not_id, near_rib, fullname, address, phone, message, created_at, is_read,
-           gps_latitude, gps_longitude, location_name,
+           latitude, longitude, location_name,
            CASE 
-             WHEN gps_latitude IS NOT NULL AND gps_longitude IS NOT NULL THEN true 
+             WHEN latitude IS NOT NULL AND longitude IS NOT NULL THEN true 
              ELSE false 
            END as has_gps_location
          FROM notification WHERE not_id = $1`,
@@ -257,14 +257,14 @@ class NotificationController {
       }
 
       const notification = result.rows[0];
-      const googleMapsLink = (notification.gps_latitude && notification.gps_longitude) ? 
-                             `https://www.google.com/maps?q=${notification.gps_latitude},${notification.gps_longitude}` : null;
+      const googleMapsLink = (notification.latitude && notification.longitude) ? 
+                             `https://www.google.com/maps?q=${notification.latitude},${notification.longitude}` : null;
       
       const formattedNotification = {
         ...notification,
         gps_location: notification.has_gps_location ? {
-          latitude: parseFloat(notification.gps_latitude),
-          longitude: parseFloat(notification.gps_longitude),
+          latitude: parseFloat(notification.latitude),
+          longitude: parseFloat(notification.longitude),
           location_name: notification.location_name || 'Unknown Location',
           google_maps_link: googleMapsLink
         } : null,
@@ -365,14 +365,14 @@ class NotificationController {
       // Haversine formula to calculate distance
       const query = `
         SELECT *,
-               (6371 * acos(cos(radians($1)) * cos(radians(gps_latitude)) *
-               cos(radians(gps_longitude) - radians($2)) +
-               sin(radians($1)) * sin(radians(gps_latitude)))) AS distance
+               (6371 * acos(cos(radians($1)) * cos(radians(latitude)) *
+               cos(radians(longitude) - radians($2)) +
+               sin(radians($1)) * sin(radians(latitude)))) AS distance
         FROM notification
-        WHERE gps_latitude IS NOT NULL AND gps_longitude IS NOT NULL
-        HAVING (6371 * acos(cos(radians($1)) * cos(radians(gps_latitude)) *
-               cos(radians(gps_longitude) - radians($2)) +
-               sin(radians($1)) * sin(radians(gps_latitude)))) <= $3
+        WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+        HAVING (6371 * acos(cos(radians($1)) * cos(radians(latitude)) *
+               cos(radians(longitude) - radians($2)) +
+               sin(radians($1)) * sin(radians(latitude)))) <= $3
         ORDER BY distance
       `;
 
@@ -400,12 +400,12 @@ class NotificationController {
   async getNotificationsForMap(req, res) {
     try {
       const result = await pool.query(
-        'SELECT not_id, fullname, message, gps_latitude, gps_longitude, location_name, created_at FROM notification WHERE gps_latitude IS NOT NULL AND gps_longitude IS NOT NULL ORDER BY created_at DESC'
+        'SELECT not_id, fullname, message, latitude, longitude, location_name, created_at FROM notification WHERE latitude IS NOT NULL AND longitude IS NOT NULL ORDER BY created_at DESC'
       );
 
       const notificationsWithLinks = result.rows.map(notif => ({
         ...notif,
-        google_maps_link: `https://www.google.com/maps?q=${notif.gps_latitude},${notif.gps_longitude}`
+        google_maps_link: `https://www.google.com/maps?q=${notif.latitude},${notif.longitude}`
       }));
 
       res.json({
@@ -428,7 +428,7 @@ class NotificationController {
   // Get GPS statistics for notifications
   async getNotificationGPSStatistics(req, res) {
     try {
-      const totalNotificationsWithGPS = await pool.query('SELECT COUNT(*) FROM notification WHERE gps_latitude IS NOT NULL AND gps_longitude IS NOT NULL');
+      const totalNotificationsWithGPS = await pool.query('SELECT COUNT(*) FROM notification WHERE latitude IS NOT NULL AND longitude IS NOT NULL');
       const notificationsByLocationName = await pool.query('SELECT location_name, COUNT(*) FROM notification WHERE location_name IS NOT NULL GROUP BY location_name ORDER BY COUNT(*) DESC');
 
       res.json({
@@ -443,6 +443,51 @@ class NotificationController {
       res.status(500).json({
         success: false,
         message: 'Failed to retrieve notification GPS statistics'
+      });
+    }
+  }
+
+  // Get RIB statistics
+  async getRibStatistics(req, res) {
+    try {
+      const totalNotifications = await pool.query('SELECT COUNT(*) FROM notification');
+      const notificationsByRib = await pool.query(`
+        SELECT near_rib, COUNT(*) as count 
+        FROM notification 
+        WHERE near_rib IS NOT NULL 
+        GROUP BY near_rib 
+        ORDER BY COUNT(*) DESC
+      `);
+      const notificationsWithGPS = await pool.query('SELECT COUNT(*) FROM notification WHERE latitude IS NOT NULL AND longitude IS NOT NULL');
+      const notificationsByLocation = await pool.query(`
+        SELECT location_name, COUNT(*) as count 
+        FROM notification 
+        WHERE location_name IS NOT NULL 
+        GROUP BY location_name 
+        ORDER BY COUNT(*) DESC
+        LIMIT 10
+      `);
+
+      res.json({
+        success: true,
+        data: {
+          totalNotifications: parseInt(totalNotifications.rows[0].count),
+          totalWithGPS: parseInt(notificationsWithGPS.rows[0].count),
+          notificationsByRib: notificationsByRib.rows,
+          topLocations: notificationsByLocation.rows,
+          gpsCoverage: {
+            percentage: totalNotifications.rows[0].count > 0 ? 
+              Math.round((parseInt(notificationsWithGPS.rows[0].count) / parseInt(totalNotifications.rows[0].count)) * 100) : 0,
+            withGPS: parseInt(notificationsWithGPS.rows[0].count),
+            withoutGPS: parseInt(totalNotifications.rows[0].count) - parseInt(notificationsWithGPS.rows[0].count)
+          }
+        }
+      });
+    } catch (error) {
+      console.error('Get RIB statistics error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to retrieve RIB statistics'
       });
     }
   }

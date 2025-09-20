@@ -26,6 +26,7 @@ router.get('/', notificationController.getAllNotifications);
 router.get('/location', notificationController.getNotificationsByLocation);
 router.get('/map', notificationController.getNotificationsForMap);
 router.get('/gps-statistics', notificationController.getNotificationGPSStatistics);
+router.get('/stats/rib-statistics', notificationController.getRibStatistics);
 router.get('/:id', notificationController.getNotificationById);
 
 // Protected routes (require authentication)

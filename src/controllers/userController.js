@@ -573,6 +573,243 @@ async resetPassword(req, res) {
       });
     }
   }
+
+  // Update user (Admin only)
+  async updateUser(req, res) {
+    try {
+      const { id } = req.params;
+      const { fullname, email, position, sector, role } = req.body;
+
+      // Validate required fields
+      if (!fullname || !email) {
+        return res.status(400).json({
+          success: false,
+          message: 'Full name and email are required'
+        });
+      }
+
+      // Check if user exists
+      const existingUser = await pool.query(
+        'SELECT user_id, email FROM users WHERE user_id = $1',
+        [id]
+      );
+
+      if (existingUser.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+
+      // Check if email is already taken by another user
+      if (email !== existingUser.rows[0].email) {
+        const emailCheck = await pool.query(
+          'SELECT user_id FROM users WHERE email = $1 AND user_id != $2',
+          [email.toLowerCase(), id]
+        );
+
+        if (emailCheck.rows.length > 0) {
+          return res.status(400).json({
+            success: false,
+            message: 'Email is already taken by another user'
+          });
+        }
+      }
+
+      // Update user - only fields that exist in database
+      const updateQuery = `
+        UPDATE users 
+        SET fullname = $1, email = $2, position = $3, sector = $4, role = $5
+        WHERE user_id = $6
+        RETURNING user_id, fullname, email, position, sector, role, is_verified, is_approved, created_at, last_login
+      `;
+
+      const result = await pool.query(updateQuery, [
+        fullname.trim(),
+        email.trim().toLowerCase(),
+        position?.trim() || null,
+        sector?.trim() || null,
+        role || existingUser.rows[0].role,
+        id
+      ]);
+
+      const updatedUser = result.rows[0];
+
+      // Send email notification if email changed
+      if (email !== existingUser.rows[0].email) {
+        try {
+          await emailService.sendEmail(
+            email,
+            'Email Address Updated - FindSinners System',
+            `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <h2 style="color: #333;">Email Address Updated</h2>
+                <p>Hello ${fullname},</p>
+                <p>Your email address has been updated for your FindSinners System account.</p>
+                <p><strong>New Email:</strong> ${email}</p>
+                <p>If you did not request this change, please contact support immediately.</p>
+                <div style="text-align: center; margin-top: 20px; color: #666;">
+                  <p>Best regards,<br><strong>FindSinners System Team</strong></p>
+                </div>
+              </div>
+            `,
+            `Hello ${fullname},\n\nYour email address has been updated to: ${email}\n\nIf you did not request this change, please contact support immediately.\n\nBest regards,\nFindSinners System Team`
+          );
+        } catch (emailError) {
+          console.error('Email notification failed:', emailError.message);
+        }
+      }
+
+      res.json({
+        success: true,
+        message: 'User updated successfully',
+        user: updatedUser
+      });
+
+    } catch (error) {
+      console.error('Update user error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to update user'
+      });
+    }
+  }
+
+  // Get user profile (User self-management)
+  async getUserProfile(req, res) {
+    try {
+      const userId = req.user.userId || req.user.user_id;
+      
+      const result = await pool.query(
+        'SELECT user_id, fullname, email, position, sector, role, is_verified, is_approved, created_at, last_login FROM users WHERE user_id = $1',
+        [userId]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+
+      res.json({
+        success: true,
+        user: result.rows[0]
+      });
+
+    } catch (error) {
+      console.error('Get user profile error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get user profile'
+      });
+    }
+  }
+
+  // Update user profile (User self-management)
+  async updateUserProfile(req, res) {
+    try {
+      const userId = req.user.userId || req.user.user_id;
+      const { fullname, email, position, sector } = req.body;
+
+      // Validate required fields
+      if (!fullname || !email) {
+        return res.status(400).json({
+          success: false,
+          message: 'Full name and email are required'
+        });
+      }
+
+      // Check if user exists
+      const existingUser = await pool.query(
+        'SELECT user_id, email FROM users WHERE user_id = $1',
+        [userId]
+      );
+
+      if (existingUser.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+
+      // Check if email is already taken by another user
+      if (email !== existingUser.rows[0].email) {
+        const emailCheck = await pool.query(
+          'SELECT user_id FROM users WHERE email = $1 AND user_id != $2',
+          [email.toLowerCase(), userId]
+        );
+
+        if (emailCheck.rows.length > 0) {
+          return res.status(400).json({
+            success: false,
+            message: 'Email is already taken by another user'
+          });
+        }
+      }
+
+      // Update user profile - only fields that exist in database
+      const updateQuery = `
+        UPDATE users 
+        SET fullname = $1, email = $2, position = $3, sector = $4
+        WHERE user_id = $5
+        RETURNING user_id, fullname, email, position, sector, role, is_verified, is_approved, created_at, last_login
+      `;
+
+      const result = await pool.query(updateQuery, [
+        fullname.trim(),
+        email.trim().toLowerCase(),
+        position?.trim() || null,
+        sector?.trim() || null,
+        userId
+      ]);
+
+      const updatedUser = result.rows[0];
+
+      // Send email notification if email changed
+      if (email !== existingUser.rows[0].email) {
+        try {
+          await emailService.sendEmail(
+            email,
+            'Profile Updated - FindSinners System',
+            `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <h2 style="color: #333;">Profile Updated</h2>
+                <p>Hello ${fullname},</p>
+                <p>Your profile has been successfully updated.</p>
+                <p><strong>Updated Information:</strong></p>
+                <ul>
+                  <li><strong>Name:</strong> ${fullname}</li>
+                  <li><strong>Email:</strong> ${email}</li>
+                  <li><strong>Position:</strong> ${position || 'Not specified'}</li>
+                  <li><strong>Sector:</strong> ${sector || 'Not specified'}</li>
+                </ul>
+                <div style="text-align: center; margin-top: 20px; color: #666;">
+                  <p>Best regards,<br><strong>FindSinners System Team</strong></p>
+                </div>
+              </div>
+            `,
+            `Hello ${fullname},\n\nYour profile has been successfully updated.\n\nUpdated Information:\n- Name: ${fullname}\n- Email: ${email}\n- Position: ${position || 'Not specified'}\n- Sector: ${sector || 'Not specified'}\n\nBest regards,\nFindSinners System Team`
+          );
+        } catch (emailError) {
+          console.error('Email notification failed:', emailError.message);
+        }
+      }
+
+      res.json({
+        success: true,
+        message: 'Profile updated successfully',
+        user: updatedUser
+      });
+
+    } catch (error) {
+      console.error('Update user profile error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to update profile'
+      });
+    }
+  }
 }
 
 module.exports = new UserController();

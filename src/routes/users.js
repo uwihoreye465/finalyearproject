@@ -7,22 +7,25 @@ const {
   validateForgotPassword,
   validateResetPassword
 } = require('../middleware/validation');
-// All routes require authentication and admin role
+
+// Public routes
+router.post('/forgot-password', validateForgotPassword, userController.forgotPassword);
+router.post('/reset-password/:token', validateResetPassword, userController.resetPassword);
+
+// User self-management routes (require authentication only)
 router.use(auth);
+router.get('/profile', userController.getUserProfile);
+router.put('/profile', userController.updateUserProfile);
+router.post('/change-password', validateChangePassword, userController.changePassword);
+
+// Admin-only routes (require admin authentication)
 router.use(adminAuth);
 router.get('/:id', userController.getUserById); 
 router.get('/', userController.getAllUsers);
 router.get('/pending', userController.getPendingUsers);
 router.get('/dashboard/stats', userController.getDashboardStats);
 router.put('/:id/approval', userController.updateUserApproval);
+router.put('/:id', userController.updateUser);
 router.delete('/:id', userController.deleteUser);
-
-
-// Public routes
-router.post('/forgot-password', validateForgotPassword, userController.forgotPassword);
-router.post('/reset-password/:token', validateResetPassword, userController.resetPassword);
-
-// Protected routes (require authentication)
-router.post('/change-password', auth, validateChangePassword, userController.changePassword);
 
 module.exports = router;

@@ -338,25 +338,31 @@ class NotificationController {
       }
 
       const result = await pool.query(
-        `INSERT INTO notification (near_rib, fullname, address, phone, message, latitude, longitude, location_name)
+        `INSERT INTO notification (near_rib, fullname, address, phone, message, gps_latitude, gps_longitude, location_name)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
         [near_rib, fullname, address, phone, message, finalLatitude || null, finalLongitude || null, finalLocationName || null]
       );
 
+      const newNotification = result.rows[0];
+      const googleMapsLink = (finalLatitude && finalLongitude) ? 
+                             `https://www.google.com/maps?q=${finalLatitude},${finalLongitude}` : null;
+
       res.status(201).json({
         success: true,
-        message: 'Notification sent successfully',
+        message: 'Notification sent successfully with automatic location tracking',
         data: { 
-          notification: result.rows[0],
+          notification: newNotification,
           device_tracking: {
             client_ip: clientIP,
             location_detected: !!(finalLatitude && finalLongitude),
-            location_source: latitude && longitude ? 'gps_provided' : 'ip_geolocation',
+            location_source: 'automatic_detection',
             location: finalLatitude && finalLongitude ? {
               latitude: parseFloat(finalLatitude),
               longitude: parseFloat(finalLongitude),
-              location_name: finalLocationName || 'Auto-detected Location'
-            } : null
+              location_name: finalLocationName || 'Auto-detected Location',
+              google_maps_link: googleMapsLink
+            } : null,
+            google_maps_link: googleMapsLink
           }
         }
       });
@@ -385,9 +391,9 @@ class NotificationController {
       const result = await pool.query(
         `SELECT 
            not_id, near_rib, fullname, address, phone, message, created_at, is_read,
-           latitude, longitude, location_name,
+           gps_latitude, gps_longitude, location_name,
            CASE 
-             WHEN latitude IS NOT NULL AND longitude IS NOT NULL THEN true 
+             WHEN gps_latitude IS NOT NULL AND gps_longitude IS NOT NULL THEN true 
              ELSE false 
            END as has_gps_location
          FROM notification 
@@ -396,15 +402,22 @@ class NotificationController {
         [limit, offset]
       );
 
-      // Format notifications with GPS data
-      const notifications = result.rows.map(notification => ({
-        ...notification,
-        gps_location: notification.has_gps_location ? {
-          latitude: parseFloat(notification.latitude),
-          longitude: parseFloat(notification.longitude),
-          location_name: notification.location_name || 'Unknown Location'
-        } : null
-      }));
+      // Format notifications with GPS data and Google Maps links
+      const notifications = result.rows.map(notification => {
+        const googleMapsLink = (notification.gps_latitude && notification.gps_longitude) ? 
+                               `https://www.google.com/maps?q=${notification.gps_latitude},${notification.gps_longitude}` : null;
+        
+        return {
+          ...notification,
+          gps_location: notification.has_gps_location ? {
+            latitude: parseFloat(notification.gps_latitude),
+            longitude: parseFloat(notification.gps_longitude),
+            location_name: notification.location_name || 'Unknown Location',
+            google_maps_link: googleMapsLink
+          } : null,
+          google_maps_link: googleMapsLink
+        };
+      });
 
       res.json({
         success: true,
@@ -431,9 +444,9 @@ class NotificationController {
       const result = await pool.query(
         `SELECT 
            not_id, near_rib, fullname, address, phone, message, created_at, is_read,
-           latitude, longitude, location_name,
+           gps_latitude, gps_longitude, location_name,
            CASE 
-             WHEN latitude IS NOT NULL AND longitude IS NOT NULL THEN true 
+             WHEN gps_latitude IS NOT NULL AND gps_longitude IS NOT NULL THEN true 
              ELSE false 
            END as has_gps_location
          FROM notification WHERE not_id = $1`,
@@ -448,13 +461,18 @@ class NotificationController {
       }
 
       const notification = result.rows[0];
+      const googleMapsLink = (notification.gps_latitude && notification.gps_longitude) ? 
+                             `https://www.google.com/maps?q=${notification.gps_latitude},${notification.gps_longitude}` : null;
+      
       const formattedNotification = {
         ...notification,
         gps_location: notification.has_gps_location ? {
-          latitude: parseFloat(notification.latitude),
-          longitude: parseFloat(notification.longitude),
-          location_name: notification.location_name || 'Unknown Location'
-        } : null
+          latitude: parseFloat(notification.gps_latitude),
+          longitude: parseFloat(notification.gps_longitude),
+          location_name: notification.location_name || 'Unknown Location',
+          google_maps_link: googleMapsLink
+        } : null,
+        google_maps_link: googleMapsLink
       };
 
       res.json({

@@ -21,15 +21,15 @@ const { auth } = require('../middleware/auth');
 const { validateNotification } = require('../middleware/validation');
 
 // Public routes (no authentication required)
-router.post('/', validateNotification, notificationController.sendNotification);
+router.post('/', notificationController.sendNotification);
 router.get('/', notificationController.getAllNotifications);
 router.get('/location', notificationController.getNotificationsByLocation);
-router.get('/device-info/:id', notificationController.getNotificationDeviceInfo);
+router.get('/map', notificationController.getNotificationsForMap);
+router.get('/gps-statistics', notificationController.getNotificationGPSStatistics);
 router.get('/:id', notificationController.getNotificationById);
-// Add statistics route
-router.get('/stats/rib-statistics', notificationController.getRibStatistics);
 
 // Protected routes (require authentication)
+router.put('/:id', auth, notificationController.updateNotification);
 router.delete('/:id', auth, notificationController.deleteNotification);
 
 module.exports = router;

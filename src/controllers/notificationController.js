@@ -450,37 +450,54 @@ class NotificationController {
   // Get RIB statistics
   async getRibStatistics(req, res) {
     try {
-      const totalNotifications = await pool.query('SELECT COUNT(*) FROM notification');
-      const notificationsByRib = await pool.query(`
-        SELECT near_rib, COUNT(*) as count 
+      // Get detailed RIB statistics
+      const ribStats = await pool.query(`
+        SELECT 
+          near_rib,
+          COUNT(*) as total_messages,
+          COUNT(CASE WHEN is_read = false THEN 1 END) as unread_messages,
+          COUNT(CASE WHEN is_read = true THEN 1 END) as read_messages,
+          COUNT(CASE WHEN latitude IS NOT NULL AND longitude IS NOT NULL THEN 1 END) as messages_with_gps,
+          MIN(created_at) as first_message_date,
+          MAX(created_at) as last_message_date
         FROM notification 
         WHERE near_rib IS NOT NULL 
         GROUP BY near_rib 
         ORDER BY COUNT(*) DESC
       `);
-      const notificationsWithGPS = await pool.query('SELECT COUNT(*) FROM notification WHERE latitude IS NOT NULL AND longitude IS NOT NULL');
-      const notificationsByLocation = await pool.query(`
-        SELECT location_name, COUNT(*) as count 
-        FROM notification 
-        WHERE location_name IS NOT NULL 
-        GROUP BY location_name 
-        ORDER BY COUNT(*) DESC
-        LIMIT 10
+
+      // Get overall statistics
+      const overallStats = await pool.query(`
+        SELECT 
+          COUNT(*) as total_messages,
+          COUNT(CASE WHEN is_read = false THEN 1 END) as total_unread,
+          COUNT(CASE WHEN is_read = true THEN 1 END) as total_read,
+          COUNT(CASE WHEN latitude IS NOT NULL AND longitude IS NOT NULL THEN 1 END) as total_with_gps,
+          COUNT(DISTINCT near_rib) as total_ribs
+        FROM notification
       `);
 
       res.json({
         success: true,
         data: {
-          totalNotifications: parseInt(totalNotifications.rows[0].count),
-          totalWithGPS: parseInt(notificationsWithGPS.rows[0].count),
-          notificationsByRib: notificationsByRib.rows,
-          topLocations: notificationsByLocation.rows,
-          gpsCoverage: {
-            percentage: totalNotifications.rows[0].count > 0 ? 
-              Math.round((parseInt(notificationsWithGPS.rows[0].count) / parseInt(totalNotifications.rows[0].count)) * 100) : 0,
-            withGPS: parseInt(notificationsWithGPS.rows[0].count),
-            withoutGPS: parseInt(totalNotifications.rows[0].count) - parseInt(notificationsWithGPS.rows[0].count)
-          }
+          rib_statistics: ribStats.rows.map(rib => ({
+            near_rib: rib.near_rib,
+            total_messages: rib.total_messages,
+            unread_messages: rib.unread_messages,
+            read_messages: rib.read_messages,
+            messages_with_gps: rib.messages_with_gps,
+            first_message_date: rib.first_message_date,
+            last_message_date: rib.last_message_date
+          })),
+          overall_statistics: {
+            total_messages: overallStats.rows[0].total_messages,
+            total_unread: overallStats.rows[0].total_unread,
+            total_read: overallStats.rows[0].total_read,
+            total_with_gps: overallStats.rows[0].total_with_gps,
+            total_ribs: overallStats.rows[0].total_ribs
+          },
+          timeframe: "all",
+          filtered_rib: "all"
         }
       });
     } catch (error) {

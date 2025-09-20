@@ -2,24 +2,91 @@ const pool = require('../config/database');
 const { paginate } = require('../utils/pagination');
 const axios = require('axios'); // For IP geolocation
 
+// Helper function to generate Google Maps links
+function generateGoogleMapsLinks(latitude, longitude, locationName = '') {
+  if (!latitude || !longitude) return null;
+  
+  const lat = parseFloat(latitude);
+  const lng = parseFloat(longitude);
+  
+  return {
+    // Standard Google Maps link
+    standard: `https://www.google.com/maps?q=${lat},${lng}&z=15&t=m`,
+    // Satellite view
+    satellite: `https://www.google.com/maps?q=${lat},${lng}&z=15&t=k`,
+    // Street view
+    streetview: `https://www.google.com/maps?q=${lat},${lng}&z=15&t=h`,
+    // Directions to location
+    directions: `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`,
+    // Embed link
+    embed: `https://www.google.com/maps/embed/v1/view?key=YOUR_API_KEY&center=${lat},${lng}&zoom=15&maptype=roadmap`,
+    // Short link (using Google's URL shortener would require API key)
+    short: `https://maps.google.com/maps?q=${lat},${lng}`,
+    // Location name with coordinates
+    with_name: locationName ? `https://www.google.com/maps/search/${encodeURIComponent(locationName)}/@${lat},${lng},15z` : `https://www.google.com/maps?q=${lat},${lng}&z=15&t=m`
+  };
+}
+
 // Helper function to get location from IP
 async function getLocationFromIP(ip) {
-  if (ip === '127.0.0.1' || ip === '::1') {
-    console.log('⚠️ Localhost IP detected. Skipping real IP geolocation.');
-    return null; // Skip geolocation for localhost
+  // Skip geolocation for localhost and private IPs
+  if (ip === '127.0.0.1' || ip === '::1' || ip.startsWith('192.168.') || ip.startsWith('10.') || ip.startsWith('172.')) {
+    console.log('⚠️ Local/private IP detected. Using Rwanda fallback location.');
+    return null;
   }
+  
   try {
-    // Using ipapi.co for geolocation
-    const response = await axios.get(`https://ipapi.co/${ip}/json/`);
-    const data = response.data;
-
-    if (data.latitude && data.longitude) {
-      return {
-        latitude: data.latitude,
-        longitude: data.longitude,
-        location_name: `${data.city}, ${data.region}, ${data.country_name}`
-      };
+    console.log(`🌍 Attempting IP geolocation for: ${ip}`);
+    
+    // Try multiple geolocation services for better accuracy
+    const services = [
+      `https://ipapi.co/${ip}/json/`,
+      `https://ip-api.com/json/${ip}`,
+      `https://api.ipgeolocation.io/ipgeo?apiKey=free&ip=${ip}`
+    ];
+    
+    for (const serviceUrl of services) {
+      try {
+        const response = await axios.get(serviceUrl, { timeout: 5000 });
+        const data = response.data;
+        
+        let latitude, longitude, location_name;
+        
+        if (serviceUrl.includes('ipapi.co')) {
+          if (data.latitude && data.longitude) {
+            latitude = data.latitude;
+            longitude = data.longitude;
+            location_name = `${data.city || 'Unknown'}, ${data.region || 'Unknown'}, ${data.country_name || 'Unknown'}`;
+          }
+        } else if (serviceUrl.includes('ip-api.com')) {
+          if (data.lat && data.lon) {
+            latitude = data.lat;
+            longitude = data.lon;
+            location_name = `${data.city || 'Unknown'}, ${data.regionName || 'Unknown'}, ${data.country || 'Unknown'}`;
+          }
+        } else if (serviceUrl.includes('ipgeolocation.io')) {
+          if (data.latitude && data.longitude) {
+            latitude = data.latitude;
+            longitude = data.longitude;
+            location_name = `${data.city || 'Unknown'}, ${data.state_prov || 'Unknown'}, ${data.country_name || 'Unknown'}`;
+          }
+        }
+        
+        if (latitude && longitude) {
+          console.log(`✅ Location found via ${serviceUrl}: ${location_name} (${latitude}, ${longitude})`);
+          return {
+            latitude: parseFloat(latitude),
+            longitude: parseFloat(longitude),
+            location_name: location_name
+          };
+        }
+      } catch (serviceError) {
+        console.log(`⚠️ Service ${serviceUrl} failed:`, serviceError.message);
+        continue;
+      }
     }
+    
+    console.log('❌ All geolocation services failed');
     return null;
   } catch (error) {
     console.log('❌ IP geolocation error:', error.message);
@@ -134,8 +201,7 @@ class NotificationController {
       console.log('✅ Notification inserted successfully:', result.rows[0]);
 
       const newNotification = result.rows[0];
-      const googleMapsLink = (finalLatitude && finalLongitude) ? 
-                             `https://www.google.com/maps?q=${finalLatitude},${finalLongitude}` : null;
+      const googleMapsLinks = generateGoogleMapsLinks(finalLatitude, finalLongitude, finalLocationName);
 
       res.status(201).json({
         success: true,
@@ -150,9 +216,9 @@ class NotificationController {
               latitude: parseFloat(finalLatitude),
               longitude: parseFloat(finalLongitude),
               location_name: finalLocationName || 'Auto-detected Location',
-              google_maps_link: googleMapsLink
+              google_maps_links: googleMapsLinks
             } : null,
-            google_maps_link: googleMapsLink
+            google_maps_links: googleMapsLinks
           }
         }
       });
@@ -200,8 +266,7 @@ class NotificationController {
 
       // Format notifications with GPS data and Google Maps links
       const notifications = result.rows.map(notification => {
-        const googleMapsLink = (notification.latitude && notification.longitude) ? 
-                               `https://www.google.com/maps?q=${notification.latitude},${notification.longitude}` : null;
+        const googleMapsLinks = generateGoogleMapsLinks(notification.latitude, notification.longitude, notification.location_name);
         
         return {
           ...notification,
@@ -209,9 +274,9 @@ class NotificationController {
             latitude: parseFloat(notification.latitude),
             longitude: parseFloat(notification.longitude),
             location_name: notification.location_name || 'Unknown Location',
-            google_maps_link: googleMapsLink
+            google_maps_links: googleMapsLinks
           } : null,
-          google_maps_link: googleMapsLink
+          google_maps_links: googleMapsLinks
         };
       });
 
@@ -257,8 +322,7 @@ class NotificationController {
       }
 
       const notification = result.rows[0];
-      const googleMapsLink = (notification.latitude && notification.longitude) ? 
-                             `https://www.google.com/maps?q=${notification.latitude},${notification.longitude}` : null;
+      const googleMapsLinks = generateGoogleMapsLinks(notification.latitude, notification.longitude, notification.location_name);
       
       const formattedNotification = {
         ...notification,
@@ -266,9 +330,9 @@ class NotificationController {
           latitude: parseFloat(notification.latitude),
           longitude: parseFloat(notification.longitude),
           location_name: notification.location_name || 'Unknown Location',
-          google_maps_link: googleMapsLink
+          google_maps_links: googleMapsLinks
         } : null,
-        google_maps_link: googleMapsLink
+        google_maps_links: googleMapsLinks
       };
 
       res.json({
@@ -405,7 +469,7 @@ class NotificationController {
 
       const notificationsWithLinks = result.rows.map(notif => ({
         ...notif,
-        google_maps_link: `https://www.google.com/maps?q=${notif.latitude},${notif.longitude}`
+        google_maps_link: `https://www.google.com/maps?q=${notif.latitude},${notif.longitude}&z=15&t=m`
       }));
 
       res.json({

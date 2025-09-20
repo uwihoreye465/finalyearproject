@@ -368,11 +368,23 @@ class VictimController {
       }
 
       // Prepare evidence data (files + description)
-      const evidenceData = {
-        description: evidence_description || null,
-        files: evidenceFiles,
-        uploadedAt: new Date().toISOString()
-      };
+      let evidenceData;
+      
+      if (typeof evidence === 'object' && evidence !== null) {
+        // If evidence is already an object, use it
+        evidenceData = {
+          description: evidence.description || evidence_description || null,
+          files: evidence.files || evidenceFiles,
+          uploadedAt: evidence.uploadedAt || new Date().toISOString()
+        };
+      } else {
+        // If evidence is a string, create object with it as description
+        evidenceData = {
+          description: evidence || evidence_description || null,
+          files: evidenceFiles,
+          uploadedAt: new Date().toISOString()
+        };
+      }
 
       // Insert victim record (marital_status will be auto-filled by trigger)
       const result = await client.query(
@@ -678,7 +690,12 @@ class VictimController {
       const cleanUpdates = {};
       for (const [key, value] of Object.entries(updates)) {
         if (!restrictedFields.includes(key)) {
-          cleanUpdates[key] = value;
+          // Handle evidence field specially - convert to JSON if it's an object
+          if (key === 'evidence' && typeof value === 'object' && value !== null) {
+            cleanUpdates[key] = JSON.stringify(value);
+          } else {
+            cleanUpdates[key] = value;
+          }
         } else {
           console.log(`⚠️  Restricted field "${key}" removed from update`);
         }

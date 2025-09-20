@@ -218,11 +218,24 @@ const validateVictimRecord = (req, res, next) => {
         'string.empty': '"crime_type" cannot be empty',
         'any.required': '"crime_type" is required'
       }),
-    evidence: Joi.string()
+    evidence: Joi.alternatives()
+      .try(
+        Joi.string().trim(),
+        Joi.object({
+          description: Joi.string().optional().allow('').trim(),
+          files: Joi.array().items(Joi.object({
+            filename: Joi.string().optional(),
+            originalName: Joi.string().optional(),
+            fileSize: Joi.number().optional(),
+            fileType: Joi.string().optional(),
+            fileUrl: Joi.string().optional()
+          })).optional(),
+          uploadedAt: Joi.string().optional()
+        })
+      )
       .required()
-      .trim()
       .messages({
-        'string.empty': '"evidence" cannot be empty',
+        'alternatives.types': '"evidence" must be either a string or an object with description, files, and uploadedAt',
         'any.required': '"evidence" is required'
       }),
     date_committed: Joi.date()
@@ -322,9 +335,24 @@ const validateVictimRecordUpdate = (req, res, next) => {
       .messages({
         'string.empty': '"crime_type" cannot be empty if provided'
       }),
-    evidence: Joi.string().optional().trim()
+    evidence: Joi.alternatives()
+      .try(
+        Joi.string().trim(),
+        Joi.object({
+          description: Joi.string().optional().allow('').trim(),
+          files: Joi.array().items(Joi.object({
+            filename: Joi.string().optional(),
+            originalName: Joi.string().optional(),
+            fileSize: Joi.number().optional(),
+            fileType: Joi.string().optional(),
+            fileUrl: Joi.string().optional()
+          })).optional(),
+          uploadedAt: Joi.string().optional()
+        })
+      )
+      .optional()
       .messages({
-        'string.empty': '"evidence" cannot be empty if provided'
+        'alternatives.types': '"evidence" must be either a string or an object with description, files, and uploadedAt'
       }),
     date_committed: Joi.date().optional()
       .messages({

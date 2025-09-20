@@ -370,6 +370,9 @@ class VictimController {
       // Prepare evidence data (files + description)
       let evidenceData;
       
+      // Get evidence from req.body (it should be validated by middleware)
+      const evidence = req.body.evidence;
+      
       if (typeof evidence === 'object' && evidence !== null) {
         // If evidence is already an object, use it
         evidenceData = {
@@ -426,16 +429,33 @@ class VictimController {
     } catch (error) {
       await client.query('ROLLBACK');
       console.error('Add victim error:', error);
+      console.error('Error details:', {
+        code: error.code,
+        detail: error.detail,
+        constraint: error.constraint,
+        message: error.message
+      });
       
       if (error.code === '23505') {
         res.status(400).json({
           success: false,
           message: 'Victim record already exists for this person'
         });
+      } else if (error.code === '23502') {
+        res.status(400).json({
+          success: false,
+          message: `Missing required field: ${error.column}`
+        });
+      } else if (error.code === '23503') {
+        res.status(400).json({
+          success: false,
+          message: 'Referenced record not found in database'
+        });
       } else {
         res.status(500).json({
           success: false,
-          message: 'Failed to add victim record'
+          message: 'Failed to add victim record',
+          error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
         });
       }
     } finally {
@@ -663,6 +683,17 @@ class VictimController {
 
       console.log('🔍 Update request body:', updates);
       console.log('🔍 Updating victim ID:', id);
+      console.log('🔍 Content-Type:', req.get('Content-Type'));
+      
+      // Check if body is empty or invalid
+      if (!updates || Object.keys(updates).length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          success: false,
+          message: 'Request body cannot be empty. Please provide data to update.',
+          receivedData: updates
+        });
+      }
 
       // Check if victim exists
       const existingVictim = await client.query(
@@ -733,10 +764,35 @@ class VictimController {
     } catch (error) {
       await client.query('ROLLBACK');
       console.error('Update victim error:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to update victim record'
+      console.error('Error details:', {
+        code: error.code,
+        detail: error.detail,
+        constraint: error.constraint,
+        message: error.message
       });
+      
+      if (error.code === '23502') {
+        res.status(400).json({
+          success: false,
+          message: `Missing required field: ${error.column}`
+        });
+      } else if (error.code === '23503') {
+        res.status(400).json({
+          success: false,
+          message: 'Referenced record not found in database'
+        });
+      } else if (error.code === '23505') {
+        res.status(400).json({
+          success: false,
+          message: 'Duplicate entry - this record already exists'
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          message: 'Failed to update victim record',
+          error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+        });
+      }
     } finally {
       client.release();
     }

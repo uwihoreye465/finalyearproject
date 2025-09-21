@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Image Upload</title>
+</head>
+<body>
+    <h2>Test Arrested Person Image Upload</h2>
+    <form id="uploadForm" enctype="multipart/form-data">
+        <div>
+            <label>Full Name:</label>
+            <input type="text" name="fullname" value="Test Person" required>
+        </div>
+        <div>
+            <label>Crime Type:</label>
+            <input type="text" name="crime_type" value="Test Crime" required>
+        </div>
+        <div>
+            <label>Image File:</label>
+            <input type="file" name="image" accept="image/*" required>
+        </div>
+        <div>
+            <label>ID Type:</label>
+            <select name="id_type">
+                <option value="indangamuntu_yumunyarwanda">Rwandan ID</option>
+                <option value="passport">Passport</option>
+            </select>
+        </div>
+        <div>
+            <label>ID Number:</label>
+            <input type="text" name="id_number" value="123456789">
+        </div>
+        <button type="submit">Upload</button>
+    </form>
+
+    <div id="result"></div>
+
+    <script>
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            
+            try {
+                const response = await fetch('http://localhost:6000/api/v1/arrested', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                document.getElementById('result').innerHTML = '<pre>' + JSON.stringify(result, null, 2) + '</pre>';
+                
+                if (result.success && result.data) {
+                    const arrestId = result.data.arrest_id;
+                    document.getElementById('result').innerHTML += 
+                        '<br><a href="http://localhost:6000/api/v1/arrested/' + arrestId + '/download/image" target="_blank">Download Image</a>';
+                }
+            } catch (error) {
+                document.getElementById('result').innerHTML = 'Error: ' + error.message;
+            }
+        });
+    </script>
+</body>
+</html>

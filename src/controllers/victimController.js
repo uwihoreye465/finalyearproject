@@ -345,11 +345,153 @@ class VictimController {
     });
   }
 
-  // Get evidence file
+  // Download all evidence files for a victim by vic_id
+  async downloadVictimEvidence(req, res) {
+    try {
+      const { vicId } = req.params;
+      
+      console.log('🔍 Downloading evidence for victim ID:', vicId);
+      
+      // Get victim record with evidence
+      const victimResult = await pool.query(
+        'SELECT vic_id, first_name, last_name, evidence FROM victim WHERE vic_id = $1',
+        [vicId]
+      );
+
+      if (victimResult.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Victim record not found'
+        });
+      }
+
+      const victim = victimResult.rows[0];
+      const evidence = victim.evidence;
+
+      if (!evidence || !evidence.files || !Array.isArray(evidence.files) || evidence.files.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'No evidence files found for this victim',
+          evidence: evidence
+        });
+      }
+
+      console.log('📁 Evidence data:', JSON.stringify(evidence, null, 2));
+
+      // Create a ZIP file with all evidence files
+      const archiver = require('archiver');
+      const archive = archiver('zip', { zlib: { level: 9 } });
+
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', `attachment; filename="victim_${vicId}_evidence.zip"`);
+
+      archive.pipe(res);
+
+      // Add each evidence file to the ZIP
+      for (const file of evidence.files) {
+        // Check if file has a valid filename
+        if (!file.filename) {
+          console.log('❌ File missing filename:', file);
+          continue;
+        }
+        
+        const filePath = path.join(process.cwd(), 'uploads', 'evidence', file.filename);
+        
+        console.log('🔍 Looking for evidence file:', filePath);
+        console.log('📄 File object:', file);
+        
+        if (fs.existsSync(filePath)) {
+          archive.file(filePath, { name: file.originalName || file.filename });
+          console.log('✅ Added file to ZIP:', file.originalName || file.filename);
+        } else {
+          console.log('❌ File not found:', filePath);
+        }
+      }
+
+      archive.finalize();
+
+    } catch (error) {
+      console.error('Error downloading victim evidence:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error downloading evidence files'
+      });
+    }
+  }
+
+  // Download single evidence file by victim ID and file index
+  async downloadVictimEvidenceFile(req, res) {
+    try {
+      const { vicId, fileIndex } = req.params;
+      const index = parseInt(fileIndex);
+      
+      if (isNaN(index) || index < 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid file index'
+        });
+      }
+
+      // Get victim record
+      const victimResult = await pool.query(
+        'SELECT vic_id, first_name, last_name, evidence FROM victim WHERE vic_id = $1',
+        [vicId]
+      );
+
+      if (victimResult.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Victim record not found'
+        });
+      }
+
+      const evidence = victimResult.rows[0].evidence;
+      
+      if (!evidence || !evidence.files || !Array.isArray(evidence.files)) {
+        return res.status(404).json({
+          success: false,
+          message: 'No evidence files found for this victim'
+        });
+      }
+
+      if (index >= evidence.files.length) {
+        return res.status(404).json({
+          success: false,
+          message: 'File index out of range'
+        });
+      }
+
+      const file = evidence.files[index];
+      const filePath = path.join(process.cwd(), 'uploads', 'evidence', file.filename);
+      
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({
+          success: false,
+          message: 'Evidence file not found on disk'
+        });
+      }
+
+      // Set appropriate headers
+      res.setHeader('Content-Disposition', `attachment; filename="${file.originalName || file.filename}"`);
+      res.setHeader('Content-Type', file.fileType || 'application/octet-stream');
+      
+      res.download(filePath, file.originalName || file.filename);
+    } catch (error) {
+      console.error('Error downloading victim evidence file:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error downloading file'
+      });
+    }
+  }
+
+  // Simple download function for victim evidence files (by filename - kept for compatibility)
   async getEvidenceFile(req, res) {
     try {
       const { filename } = req.params;
-      const filePath = path.join(__dirname, '../../uploads/evidence', filename);
+      const filePath = path.join(process.cwd(), 'uploads', 'evidence', filename);
+      
+      console.log('🔍 Looking for evidence file:', filePath);
       
       if (!fs.existsSync(filePath)) {
         return res.status(404).json({
@@ -358,7 +500,21 @@ class VictimController {
         });
       }
 
-      res.download(filePath, filename);
+      // Set appropriate headers for file download
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Type', 'application/octet-stream');
+      
+      res.download(filePath, filename, (err) => {
+        if (err) {
+          console.error('Download error:', err);
+          if (!res.headersSent) {
+            res.status(500).json({
+              success: false,
+              message: 'Error downloading file'
+            });
+          }
+        }
+      });
     } catch (error) {
       console.error('Error serving evidence file:', error);
       res.status(500).json({
@@ -368,11 +524,160 @@ class VictimController {
     }
   }
 
+  // Get evidence file info (without downloading)
+  async getEvidenceFileInfo(req, res) {
+    try {
+      const { filename } = req.params;
+      const filePath = path.join(process.cwd(), 'uploads', 'evidence', filename);
+      
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({
+          success: false,
+          message: 'Evidence file not found'
+        });
+      }
+
+      const stats = fs.statSync(filePath);
+      const fileInfo = {
+        filename: filename,
+        originalName: filename, // You might want to store original names in DB
+        size: stats.size,
+        created: stats.birthtime,
+        modified: stats.mtime,
+        fileUrl: `/api/v1/victims/evidence/${filename}`,
+        downloadUrl: `/api/v1/victims/evidence/${filename}/download`
+      };
+
+      res.json({
+        success: true,
+        data: { fileInfo }
+      });
+    } catch (error) {
+      console.error('Error getting evidence file info:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error getting file information'
+      });
+    }
+  }
+
+  // List all evidence files for a victim
+  async getVictimEvidenceFiles(req, res) {
+    try {
+      const { victimId } = req.params;
+      
+      // Get victim record to check if it exists
+      const victimResult = await pool.query(
+        'SELECT vic_id, evidence FROM victim WHERE vic_id = $1',
+        [victimId]
+      );
+
+      if (victimResult.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Victim record not found'
+        });
+      }
+
+      const evidence = victimResult.rows[0].evidence;
+      let evidenceFiles = [];
+
+      if (evidence && typeof evidence === 'object' && evidence.files) {
+        evidenceFiles = evidence.files.map(file => ({
+          ...file,
+          downloadUrl: `/api/v1/victims/evidence/${file.filename}/download`,
+          infoUrl: `/api/v1/victims/evidence/${file.filename}/info`
+        }));
+      }
+
+      res.json({
+        success: true,
+        data: {
+          victimId: victimId,
+          evidenceFiles: evidenceFiles,
+          totalFiles: evidenceFiles.length
+        }
+      });
+    } catch (error) {
+      console.error('Error getting victim evidence files:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error getting evidence files'
+      });
+    }
+  }
+
+  // Download evidence file by victim ID and file index
+  async downloadVictimEvidenceFile(req, res) {
+    try {
+      const { victimId, fileIndex } = req.params;
+      const index = parseInt(fileIndex);
+      
+      if (isNaN(index) || index < 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid file index'
+        });
+      }
+
+      // Get victim record
+      const victimResult = await pool.query(
+        'SELECT vic_id, evidence FROM victim WHERE vic_id = $1',
+        [victimId]
+      );
+
+      if (victimResult.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Victim record not found'
+        });
+      }
+
+      const evidence = victimResult.rows[0].evidence;
+      
+      if (!evidence || !evidence.files || !Array.isArray(evidence.files)) {
+        return res.status(404).json({
+          success: false,
+          message: 'No evidence files found for this victim'
+        });
+      }
+
+      if (index >= evidence.files.length) {
+        return res.status(404).json({
+          success: false,
+          message: 'File index out of range'
+        });
+      }
+
+      const file = evidence.files[index];
+      const filePath = path.join(process.cwd(), 'uploads', 'evidence', file.filename);
+      
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({
+          success: false,
+          message: 'Evidence file not found on disk'
+        });
+      }
+
+      // Set appropriate headers
+      res.setHeader('Content-Disposition', `attachment; filename="${file.originalName || file.filename}"`);
+      res.setHeader('Content-Type', file.fileType || 'application/octet-stream');
+      
+      res.download(filePath, file.originalName || file.filename);
+    } catch (error) {
+      console.error('Error downloading victim evidence file:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error downloading file'
+      });
+    }
+  }
+
   // Delete evidence file
   async deleteEvidenceFile(req, res) {
     try {
       const { filename } = req.params;
-      const filePath = path.join(__dirname, '../../uploads/evidence', filename);
+      const filePath = path.join(process.cwd(), 'uploads', 'evidence', filename);
       
       if (!fs.existsSync(filePath)) {
         return res.status(404).json({

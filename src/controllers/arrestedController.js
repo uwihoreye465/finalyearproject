@@ -1,6 +1,7 @@
 const Arrested = require('../models/Arrested');
 const path = require('path');
 const fs = require('fs');
+const pool = require('../config/database');
 
 const createArrested = async (req, res) => {
     try {
@@ -35,7 +36,7 @@ const createArrested = async (req, res) => {
         let finalImageUrl = null;
         if (req.file) {
             // File is already saved by multer, just generate the URL
-            finalImageUrl = `/uploads/arrested/${req.file.filename}`;
+            finalImageUrl = `/uploads/arrested/images/${req.file.filename}`;
             console.log(`📸 Image uploaded successfully: ${finalImageUrl}`);
         }
 
@@ -314,11 +315,296 @@ const getStatistics = async (req, res) => {
     }
 };
 
+
+// Get arrested person image info (without downloading)
+const getArrestedImageInfo = async (req, res) => {
+    try {
+        const { arrestId } = req.params;
+        
+        // Get arrested record
+        const arrested = await Arrested.getById(parseInt(arrestId));
+        
+        if (!arrested) {
+            return res.status(404).json({
+                success: false,
+                message: 'Arrest record not found'
+            });
+        }
+
+        if (!arrested.image_url) {
+            return res.status(404).json({
+                success: false,
+                message: 'No image found for this arrest record'
+            });
+        }
+
+        // Extract filename from image_url
+        const filename = arrested.image_url.replace('/uploads/arrested/images/', '');
+        const filePath = path.join(process.cwd(), 'uploads', 'arrested', 'images', filename);
+        
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({
+                success: false,
+                message: 'Image file not found on disk'
+            });
+        }
+
+        const stats = fs.statSync(filePath);
+        const imageInfo = {
+            arrestId: arrested.arrest_id,
+            fullname: arrested.fullname,
+            filename: filename,
+            imageUrl: arrested.image_url,
+            size: stats.size,
+            created: stats.birthtime,
+            modified: stats.mtime,
+            downloadUrl: `/api/v1/arrested/${arrestId}/image/download`
+        };
+
+        res.json({
+            success: true,
+            data: { imageInfo }
+        });
+    } catch (error) {
+        console.error('Get arrested image info error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error getting image information'
+        });
+    }
+};
+
+// Debug function to check image_url data
+const debugImageUrl = async (req, res) => {
+    try {
+        const { arrestId } = req.params;
+        const arrested = await Arrested.getById(parseInt(arrestId));
+        
+        if (!arrested) {
+            return res.status(404).json({
+                success: false,
+                message: 'Arrest record not found'
+            });
+        }
+
+        const debugInfo = {
+            arrestId: arrested.arrest_id,
+            fullname: arrested.fullname,
+            image_url: arrested.image_url,
+            image_url_type: typeof arrested.image_url,
+            isBuffer: Buffer.isBuffer(arrested.image_url),
+            image_url_length: arrested.image_url ? arrested.image_url.length : 0,
+            image_url_preview: arrested.image_url ? arrested.image_url.toString().substring(0, 100) : null
+        };
+
+        res.json({
+            success: true,
+            debug: debugInfo
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Debug error',
+            error: error.message
+        });
+    }
+};
+
+// Download arrested person image by arrest ID
+const downloadArrestedImage = async (req, res) => {
+    try {
+        const { arrestId } = req.params;
+        
+        console.log('🔍 Downloading image for arrest ID:', arrestId);
+        
+        // Get arrested record to check if it exists and get image URL
+        const arrested = await Arrested.getById(parseInt(arrestId));
+        
+        if (!arrested) {
+            return res.status(404).json({
+                success: false,
+                message: 'Arrest record not found'
+            });
+        }
+
+        if (!arrested.image_url) {
+            return res.status(404).json({
+                success: false,
+                message: 'No image found for this arrest record'
+            });
+        }
+
+        // Handle both binary data (bytea) and text (varchar) image_url
+        let filename;
+        let imageUrl = arrested.image_url;
+        
+        // If image_url is binary data (Buffer), convert to string
+        if (Buffer.isBuffer(imageUrl)) {
+            imageUrl = imageUrl.toString('utf8');
+        }
+        
+        // If image_url is a blob URL, we can't download it
+        if (imageUrl && imageUrl.includes('blob:')) {
+            return res.status(400).json({
+                success: false,
+                message: 'Image is stored as blob data. Please re-upload the image to store it as a file.',
+                imageType: 'blob',
+                solution: 'Use PUT /api/v1/arrested/{id} with image file to update the record',
+                currentImageUrl: imageUrl
+            });
+        }
+        
+        // If image_url is a proper file path, extract filename
+        if (imageUrl && imageUrl.includes('/uploads/arrested/images/')) {
+            filename = imageUrl.replace('/uploads/arrested/images/', '');
+        } else if (imageUrl && !imageUrl.includes('/')) {
+            // If it's just a filename without path
+            filename = imageUrl;
+        } else {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid image format. Image must be uploaded as a file.',
+                imageUrl: imageUrl
+            });
+        }
+        
+        const filePath = path.join(process.cwd(), 'uploads', 'arrested', 'images', filename);
+        
+        console.log('🔍 Looking for arrested image:', filePath);
+        console.log('📁 Image URL from database:', imageUrl);
+        console.log('📄 Extracted filename:', filename);
+        
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({
+                success: false,
+                message: 'Image file not found on disk'
+            });
+        }
+
+        // Set appropriate headers for image download
+        res.setHeader('Content-Disposition', `attachment; filename="${arrested.fullname}_arrest_image.jpg"`);
+        res.setHeader('Content-Type', 'application/octet-stream');
+        
+        res.download(filePath, `${arrested.fullname}_arrest_image.jpg`, (err) => {
+            if (err) {
+                console.error('Download error:', err);
+                if (!res.headersSent) {
+                    res.status(500).json({
+                        success: false,
+                        message: 'Error downloading image'
+                    });
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Download arrested image error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error downloading image'
+        });
+    }
+};
+
+// Download arrested person image by filename (kept for compatibility)
+const downloadArrestedImageByFilename = async (req, res) => {
+    try {
+        const { filename } = req.params;
+        const filePath = path.join(process.cwd(), 'uploads', 'arrested', 'images', filename);
+        
+        console.log('🔍 Looking for arrested image by filename:', filePath);
+        
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({
+                success: false,
+                message: 'Image file not found'
+            });
+        }
+
+        // Set appropriate headers for image download
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Content-Type', 'application/octet-stream');
+        
+        res.download(filePath, filename, (err) => {
+            if (err) {
+                console.error('Download error:', err);
+                if (!res.headersSent) {
+                    res.status(500).json({
+                        success: false,
+                        message: 'Error downloading image'
+                    });
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Download arrested image by filename error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error downloading image'
+        });
+    }
+};
+
+// Upload evidence files for arrested person
+const uploadEvidence = async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        // Check if arrested record exists
+        const arrested = await Arrested.getById(parseInt(id));
+        if (!arrested) {
+            return res.status(404).json({
+                success: false,
+                message: 'Arrest record not found'
+            });
+        }
+
+        if (!req.files || req.files.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'No evidence files provided'
+            });
+        }
+
+        // Process uploaded files
+        const evidenceFiles = req.files.map(file => ({
+            filename: file.filename,
+            originalName: file.originalname,
+            fileSize: file.size,
+            fileType: file.mimetype,
+            fileUrl: `/uploads/arrested/evidence/${file.filename}`,
+            uploadedAt: new Date().toISOString()
+        }));
+
+        // TODO: Update arrested record with evidence files
+        // This would require adding an evidence_files column to the arrested table
+        console.log('Evidence files uploaded:', evidenceFiles);
+
+        res.json({
+            success: true,
+            message: 'Evidence files uploaded successfully',
+            data: {
+                arrestId: id,
+                evidenceFiles: evidenceFiles
+            }
+        });
+    } catch (error) {
+        console.error('Upload evidence error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to upload evidence files'
+        });
+    }
+};
+
+
 module.exports = {
     createArrested,
     getAllArrested,
     getArrestedById,
     updateArrested,
     deleteArrested,
-    getStatistics
+    getStatistics,
+    debugImageUrl,
+    downloadArrestedImage,
+    downloadArrestedImageByFilename
 };

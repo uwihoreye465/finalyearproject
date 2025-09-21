@@ -4,7 +4,7 @@ require('dotenv').config();
 const app = require('./app');
 const pool = require('./src/config/database');
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 6000;
 
 // Test database connection before starting server
 async function startServer() {

@@ -511,6 +511,193 @@ class NotificationController {
     }
   }
 
+  // Mark notification as read/unread
+  async markNotificationRead(req, res) {
+    try {
+      const { id } = req.params;
+      const { is_read = true } = req.body;
+
+      console.log('🔍 Mark notification read request:', { id, is_read });
+
+      // Check if notification exists
+      const existingNotification = await pool.query(
+        'SELECT not_id, is_read FROM notification WHERE not_id = $1',
+        [id]
+      );
+
+      console.log('🔍 Existing notification:', existingNotification.rows);
+
+      if (existingNotification.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Notification not found'
+        });
+      }
+
+      // Update read status - check if updated_at column exists, if not just update is_read
+      let updateQuery;
+      let queryParams;
+      
+      try {
+        // Try with updated_at first
+        updateQuery = 'UPDATE notification SET is_read = $1, updated_at = CURRENT_TIMESTAMP WHERE not_id = $2 RETURNING *';
+        queryParams = [is_read, id];
+        const result = await pool.query(updateQuery, queryParams);
+        
+        console.log('✅ Updated with updated_at column:', result.rows[0]);
+
+        res.json({
+          success: true,
+          message: `Notification marked as ${is_read ? 'read' : 'unread'} successfully`,
+          data: { 
+            notification: result.rows[0],
+            previous_status: existingNotification.rows[0].is_read,
+            new_status: is_read
+          }
+        });
+
+      } catch (updateError) {
+        console.log('⚠️ Updated_at column might not exist, trying without it:', updateError.message);
+        
+        // Fallback: update without updated_at column
+        updateQuery = 'UPDATE notification SET is_read = $1 WHERE not_id = $2 RETURNING *';
+        queryParams = [is_read, id];
+        const result = await pool.query(updateQuery, queryParams);
+        
+        console.log('✅ Updated without updated_at column:', result.rows[0]);
+
+        res.json({
+          success: true,
+          message: `Notification marked as ${is_read ? 'read' : 'unread'} successfully`,
+          data: { 
+            notification: result.rows[0],
+            previous_status: existingNotification.rows[0].is_read,
+            new_status: is_read
+          }
+        });
+      }
+
+    } catch (error) {
+      console.error('❌ Mark notification read error:', error);
+      console.error('❌ Error details:', {
+        message: error.message,
+        code: error.code,
+        detail: error.detail,
+        hint: error.hint
+      });
+      res.status(500).json({
+        success: false,
+        message: 'Failed to update notification read status',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      });
+    }
+  }
+
+  // Toggle notification read status
+  async toggleNotificationRead(req, res) {
+    try {
+      const { id } = req.params;
+
+      // Get current status
+      const currentNotification = await pool.query(
+        'SELECT not_id, is_read FROM notification WHERE not_id = $1',
+        [id]
+      );
+
+      if (currentNotification.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Notification not found'
+        });
+      }
+
+      const newReadStatus = !currentNotification.rows[0].is_read;
+
+      try {
+        // Try with updated_at first
+        const result = await pool.query(
+          'UPDATE notification SET is_read = $1, updated_at = CURRENT_TIMESTAMP WHERE not_id = $2 RETURNING *',
+          [newReadStatus, id]
+        );
+
+        res.json({
+          success: true,
+          message: `Notification toggled to ${newReadStatus ? 'read' : 'unread'} successfully`,
+          data: { 
+            notification: result.rows[0],
+            previous_status: currentNotification.rows[0].is_read,
+            new_status: newReadStatus
+          }
+        });
+
+      } catch (updateError) {
+        // Fallback: update without updated_at column
+        const result = await pool.query(
+          'UPDATE notification SET is_read = $1 WHERE not_id = $2 RETURNING *',
+          [newReadStatus, id]
+        );
+
+        res.json({
+          success: true,
+          message: `Notification toggled to ${newReadStatus ? 'read' : 'unread'} successfully`,
+          data: { 
+            notification: result.rows[0],
+            previous_status: currentNotification.rows[0].is_read,
+            new_status: newReadStatus
+          }
+        });
+      }
+
+    } catch (error) {
+      console.error('Toggle notification read error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to toggle notification read status'
+      });
+    }
+  }
+
+  // Mark multiple notifications as read
+  async markMultipleNotificationsRead(req, res) {
+    try {
+      const { notification_ids, is_read = true } = req.body;
+
+      if (!notification_ids || !Array.isArray(notification_ids) || notification_ids.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'notification_ids array is required'
+        });
+      }
+
+      // Update multiple notifications
+      const placeholders = notification_ids.map((_, index) => `$${index + 1}`).join(',');
+      const result = await pool.query(
+        `UPDATE notification 
+         SET is_read = $${notification_ids.length + 1}, updated_at = CURRENT_TIMESTAMP 
+         WHERE not_id IN (${placeholders}) 
+         RETURNING not_id, is_read`,
+        [...notification_ids, is_read]
+      );
+
+      res.json({
+        success: true,
+        message: `${result.rows.length} notifications marked as ${is_read ? 'read' : 'unread'}`,
+        data: { 
+          updated_notifications: result.rows,
+          total_updated: result.rows.length,
+          requested_count: notification_ids.length
+        }
+      });
+
+    } catch (error) {
+      console.error('Mark multiple notifications read error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to update multiple notifications'
+      });
+    }
+  }
+
   // Get RIB statistics
   async getRibStatistics(req, res) {
     try {

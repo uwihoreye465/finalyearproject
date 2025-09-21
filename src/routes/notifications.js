@@ -33,4 +33,9 @@ router.get('/:id', notificationController.getNotificationById);
 router.put('/:id', auth, notificationController.updateNotification);
 router.delete('/:id', auth, notificationController.deleteNotification);
 
+// Read/unread notification routes
+router.patch('/:id/read', auth, notificationController.markNotificationRead);
+router.patch('/:id/toggle-read', auth, notificationController.toggleNotificationRead);
+router.patch('/mark-multiple-read', auth, notificationController.markMultipleNotificationsRead);
+
 module.exports = router;

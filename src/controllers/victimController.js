@@ -389,9 +389,9 @@ class VictimController {
 
       // Add each evidence file to the ZIP
       for (const file of evidence.files) {
-        // Check if file has a valid filename
-        if (!file.filename) {
-          console.log('❌ File missing filename:', file);
+        // Check if file has a valid filename and is not an empty object
+        if (!file || typeof file !== 'object' || !file.filename || Object.keys(file).length === 0) {
+          console.log('❌ File missing filename or is empty object:', file);
           continue;
         }
         
@@ -607,71 +607,6 @@ class VictimController {
     }
   }
 
-  // Download evidence file by victim ID and file index
-  async downloadVictimEvidenceFile(req, res) {
-    try {
-      const { victimId, fileIndex } = req.params;
-      const index = parseInt(fileIndex);
-      
-      if (isNaN(index) || index < 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid file index'
-        });
-      }
-
-      // Get victim record
-      const victimResult = await pool.query(
-        'SELECT vic_id, evidence FROM victim WHERE vic_id = $1',
-        [victimId]
-      );
-
-      if (victimResult.rows.length === 0) {
-        return res.status(404).json({
-          success: false,
-          message: 'Victim record not found'
-        });
-      }
-
-      const evidence = victimResult.rows[0].evidence;
-      
-      if (!evidence || !evidence.files || !Array.isArray(evidence.files)) {
-        return res.status(404).json({
-          success: false,
-          message: 'No evidence files found for this victim'
-        });
-      }
-
-      if (index >= evidence.files.length) {
-        return res.status(404).json({
-          success: false,
-          message: 'File index out of range'
-        });
-      }
-
-      const file = evidence.files[index];
-      const filePath = path.join(process.cwd(), 'uploads', 'evidence', file.filename);
-      
-      if (!fs.existsSync(filePath)) {
-        return res.status(404).json({
-          success: false,
-          message: 'Evidence file not found on disk'
-        });
-      }
-
-      // Set appropriate headers
-      res.setHeader('Content-Disposition', `attachment; filename="${file.originalName || file.filename}"`);
-      res.setHeader('Content-Type', file.fileType || 'application/octet-stream');
-      
-      res.download(filePath, file.originalName || file.filename);
-    } catch (error) {
-      console.error('Error downloading victim evidence file:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Error downloading file'
-      });
-    }
-  }
 
   // Delete evidence file
   async deleteEvidenceFile(req, res) {

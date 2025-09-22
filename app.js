@@ -15,6 +15,7 @@ const searchRoutes = require('./src/routes/search');
 const criminalRecordRoutes = require('./src/routes/criminalRecords');
 const arrestedRoutes = require('./src/routes/arrested');
 const testArrestedRoutes = require('./src/routes/test-arrested');
+const victimCriminalRoutes = require('./src/routes/victimCriminal');
 // Middleware
 const errorHandler = require('./src/middleware/errorHandler');
 
@@ -188,6 +189,7 @@ app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/criminal-records', criminalRecordRoutes);
 app.use('/api/v1/arrested', arrestedRoutes);
 app.use('/api/v1/test-arrested', testArrestedRoutes);
+app.use('/api/v1/victim-criminal', victimCriminalRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -196,6 +198,59 @@ app.get('/api/health', (req, res) => {
     message: 'FindSinnerSystem API is running',
     timestamp: new Date().toISOString()
   });
+});
+
+// Test database connection
+app.get('/api/test-db', async (req, res) => {
+  try {
+    const pool = require('./src/config/database');
+    const result = await pool.query('SELECT COUNT(*) as count FROM victim');
+    res.json({
+      success: true,
+      message: 'Database connection successful',
+      victim_count: result.rows[0].count
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Database connection failed',
+      error: error.message
+    });
+  }
+});
+
+// Test victim-criminal API without authentication
+app.get('/api/test-victim-criminal', async (req, res) => {
+  try {
+    const pool = require('./src/config/database');
+    const query = `
+      SELECT 
+        v.vic_id,
+        v.first_name,
+        v.last_name,
+        v.id_number,
+        v.date_committed,
+        v.crime_type as victim_crime_type,
+        cr.cri_id as criminal_record_id,
+        cr.crime_type as criminal_crime_type,
+        cr.date_committed as criminal_date_committed
+      FROM victim v
+      LEFT JOIN Criminal_record cr ON v.vic_id = cr.vic_id
+      LIMIT 5
+    `;
+    const result = await pool.query(query);
+    res.json({
+      success: true,
+      message: 'Victim-criminal query successful',
+      data: result.rows
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Victim-criminal query failed',
+      error: error.message
+    });
+  }
 });
 
 // 404 handler

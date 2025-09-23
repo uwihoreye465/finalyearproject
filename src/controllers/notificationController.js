@@ -73,12 +73,23 @@ async function getLocationFromIP(ip) {
         }
         
         if (latitude && longitude) {
-          console.log(`✅ Location found via ${serviceUrl}: ${location_name} (${latitude}, ${longitude})`);
-          return {
-            latitude: parseFloat(latitude),
-            longitude: parseFloat(longitude),
-            location_name: location_name
-          };
+          // Ensure coordinates are valid numbers
+          const latNum = parseFloat(latitude);
+          const lngNum = parseFloat(longitude);
+          
+          // Validate the parsed coordinates
+          if (!isNaN(latNum) && !isNaN(lngNum) && 
+              latNum >= -90 && latNum <= 90 && 
+              lngNum >= -180 && lngNum <= 180) {
+            console.log(`✅ Location found via ${serviceUrl}: ${location_name} (${latNum}, ${lngNum})`);
+            return {
+              latitude: latNum,
+              longitude: lngNum,
+              location_name: location_name
+            };
+          } else {
+            console.log(`⚠️ Invalid coordinates from ${serviceUrl}: ${latitude}, ${longitude}`);
+          }
         }
       } catch (serviceError) {
         console.log(`⚠️ Service ${serviceUrl} failed:`, serviceError.message);
@@ -127,12 +138,15 @@ class NotificationController {
       let finalLatitude, finalLongitude, finalLocationName;
       
       try {
+        console.log(`🌍 Attempting to get location for IP: ${clientIP}`);
         const ipLocation = await getLocationFromIP(clientIP);
-        if (ipLocation) {
+        
+        if (ipLocation && ipLocation.latitude && ipLocation.longitude) {
           finalLatitude = ipLocation.latitude;
           finalLongitude = ipLocation.longitude;
           finalLocationName = ipLocation.location_name;
           console.log(`📍 Real GPS location detected from IP ${clientIP}: ${finalLocationName} (${finalLatitude}, ${finalLongitude})`);
+          console.log(`📍 Coordinate types: lat=${typeof finalLatitude}, lng=${typeof finalLongitude}`);
         } else {
           // No fallback location - only use real device location
           finalLatitude = null;
@@ -149,8 +163,8 @@ class NotificationController {
         console.log(`⚠️ GPS location detection failed for IP ${clientIP} - notification will be saved without location data`);
       }
 
-      // Validate GPS coordinates if we have them
-      if (finalLatitude !== undefined && finalLongitude !== undefined) {
+      // Validate GPS coordinates if we have them (only validate if they exist and are not null)
+      if (finalLatitude !== null && finalLongitude !== null && finalLatitude !== undefined && finalLongitude !== undefined) {
         if (typeof finalLatitude !== 'number' || typeof finalLongitude !== 'number') {
           return res.status(400).json({
             success: false,

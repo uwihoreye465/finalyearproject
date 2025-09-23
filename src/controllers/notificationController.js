@@ -431,15 +431,16 @@ class NotificationController {
     }
   }
 
-  // Delete assigned notification (only if user is assigned to it)
+  // Delete assigned notification (users can delete their assigned notifications, admins can delete any)
   async deleteAssignedNotification(req, res) {
     try {
       const { id } = req.params;
       const userId = req.user?.user_id; // Get user ID from auth middleware
+      const userRole = req.user?.role; // Get user role from auth middleware
 
-      console.log('🗑️ Delete assigned notification request:', { id, userId });
+      console.log('🗑️ Delete assigned notification request:', { id, userId, userRole });
 
-      // Check if notification exists and is assigned to the user
+      // Check if notification exists
       const checkResult = await pool.query(
         'SELECT not_id, assigned_user_id, fullname, message FROM notification WHERE not_id = $1',
         [id]
@@ -454,11 +455,11 @@ class NotificationController {
 
       const notification = checkResult.rows[0];
 
-      // Check if notification is assigned to the requesting user
-      if (notification.assigned_user_id !== userId) {
+      // Allow admins to delete any notification, or users to delete notifications assigned to them
+      if (userRole !== 'admin' && notification.assigned_user_id !== userId) {
         return res.status(403).json({
           success: false,
-          message: 'You can only delete notifications assigned to you'
+          message: 'You can only delete notifications assigned to you. Admins can delete any notification.'
         });
       }
 
@@ -467,10 +468,11 @@ class NotificationController {
 
       res.json({
         success: true,
-        message: 'Assigned notification deleted successfully',
+        message: userRole === 'admin' ? 'Notification deleted successfully by admin' : 'Assigned notification deleted successfully',
         data: { 
           deletedNotification: result.rows[0],
-          deletedBy: userId
+          deletedBy: userId,
+          deletedByRole: userRole
         }
       });
 
@@ -484,11 +486,12 @@ class NotificationController {
     }
   }
 
-  // Delete multiple assigned notifications
+  // Delete multiple assigned notifications (users can delete their assigned notifications, admins can delete any)
   async deleteMultipleAssignedNotifications(req, res) {
     try {
       const { notification_ids } = req.body;
       const userId = req.user?.user_id; // Get user ID from auth middleware
+      const userRole = req.user?.role; // Get user role from auth middleware
 
       if (!notification_ids || !Array.isArray(notification_ids) || notification_ids.length === 0) {
         return res.status(400).json({
@@ -497,43 +500,63 @@ class NotificationController {
         });
       }
 
-      console.log('🗑️ Delete multiple assigned notifications request:', { notification_ids, userId });
+      console.log('🗑️ Delete multiple assigned notifications request:', { notification_ids, userId, userRole });
 
-      // Check which notifications are assigned to the user
+      // Check which notifications exist
       const placeholders = notification_ids.map((_, index) => `$${index + 1}`).join(',');
       const checkResult = await pool.query(
         `SELECT not_id, assigned_user_id FROM notification WHERE not_id IN (${placeholders})`,
         notification_ids
       );
 
-      const userNotifications = checkResult.rows.filter(n => n.assigned_user_id === userId);
-      const otherNotifications = checkResult.rows.filter(n => n.assigned_user_id !== userId);
-
-      if (userNotifications.length === 0) {
-        return res.status(403).json({
+      if (checkResult.rows.length === 0) {
+        return res.status(404).json({
           success: false,
-          message: 'No notifications assigned to you found in the provided list'
+          message: 'No notifications found with the provided IDs'
         });
       }
 
-      // Delete only notifications assigned to the user
-      const userNotificationIds = userNotifications.map(n => n.not_id);
-      const deletePlaceholders = userNotificationIds.map((_, index) => `$${index + 1}`).join(',');
+      let notificationsToDelete;
+      let skippedNotifications = [];
+
+      if (userRole === 'admin') {
+        // Admins can delete any notifications
+        notificationsToDelete = checkResult.rows;
+      } else {
+        // Users can only delete notifications assigned to them
+        notificationsToDelete = checkResult.rows.filter(n => n.assigned_user_id === userId);
+        skippedNotifications = checkResult.rows.filter(n => n.assigned_user_id !== userId);
+
+        if (notificationsToDelete.length === 0) {
+          return res.status(403).json({
+            success: false,
+            message: 'No notifications assigned to you found in the provided list. Admins can delete any notification.'
+          });
+        }
+      }
+
+      // Delete the notifications
+      const notificationIdsToDelete = notificationsToDelete.map(n => n.not_id);
+      const deletePlaceholders = notificationIdsToDelete.map((_, index) => `$${index + 1}`).join(',');
       
       const result = await pool.query(
         `DELETE FROM notification WHERE not_id IN (${deletePlaceholders}) RETURNING *`,
-        userNotificationIds
+        notificationIdsToDelete
       );
 
       res.json({
         success: true,
-        message: `${result.rows.length} assigned notifications deleted successfully`,
+        message: userRole === 'admin' 
+          ? `${result.rows.length} notifications deleted successfully by admin`
+          : `${result.rows.length} assigned notifications deleted successfully`,
         data: { 
           deletedNotifications: result.rows,
           deletedCount: result.rows.length,
           requestedCount: notification_ids.length,
-          skippedCount: otherNotifications.length,
-          skippedNotifications: otherNotifications.map(n => n.not_id)
+          skippedCount: skippedNotifications.length,
+          skippedNotifications: skippedNotifications.map(n => n.not_id),
+          deletedBy: userId,
+          deletedByRole: userRole
         }
       });
 
@@ -547,53 +570,6 @@ class NotificationController {
     }
   }
 
-  // Delete all assigned notifications for a user
-  async deleteAllAssignedNotifications(req, res) {
-    try {
-      const userId = req.user?.user_id; // Get user ID from auth middleware
-
-      console.log('🗑️ Delete all assigned notifications request:', { userId });
-
-      // Get count of assigned notifications before deletion
-      const countResult = await pool.query(
-        'SELECT COUNT(*) FROM notification WHERE assigned_user_id = $1',
-        [userId]
-      );
-
-      const assignedCount = parseInt(countResult.rows[0].count);
-
-      if (assignedCount === 0) {
-        return res.status(404).json({
-          success: false,
-          message: 'No assigned notifications found for this user'
-        });
-      }
-
-      // Delete all assigned notifications
-      const result = await pool.query(
-        'DELETE FROM notification WHERE assigned_user_id = $1 RETURNING not_id, fullname, message, created_at',
-        [userId]
-      );
-
-      res.json({
-        success: true,
-        message: `All ${result.rows.length} assigned notifications deleted successfully`,
-        data: { 
-          deletedNotifications: result.rows,
-          deletedCount: result.rows.length,
-          deletedBy: userId
-        }
-      });
-
-    } catch (error) {
-      console.error('❌ Delete all assigned notifications error:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to delete all assigned notifications',
-        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
-      });
-    }
-  }
 
   // Get notifications by location (e.g., within a certain radius)
   async getNotificationsByLocation(req, res) {

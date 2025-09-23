@@ -46,6 +46,5 @@ router.get('/stats/assignment', auth, notificationController.getNotificationAssi
 // Delete assigned notification routes
 router.delete('/assigned/:id', auth, notificationController.deleteAssignedNotification);
 router.delete('/assigned/multiple', auth, notificationController.deleteMultipleAssignedNotifications);
-router.delete('/assigned/all', auth, notificationController.deleteAllAssignedNotifications);
 
 module.exports = router;

@@ -435,7 +435,7 @@ class NotificationController {
   async deleteAssignedNotification(req, res) {
     try {
       const { id } = req.params;
-      const userId = req.user?.user_id; // Get user ID from auth middleware
+      const userId = req.user?.userId; // Get user ID from auth middleware
       const userRole = req.user?.role; // Get user role from auth middleware
 
       console.log('🗑️ Delete assigned notification request:', { id, userId, userRole });
@@ -455,11 +455,36 @@ class NotificationController {
 
       const notification = checkResult.rows[0];
 
+      console.log('🔍 Notification details:', {
+        notification_id: notification.not_id,
+        assigned_user_id: notification.assigned_user_id,
+        requesting_user_id: userId,
+        requesting_user_role: userRole,
+        assigned_user_id_type: typeof notification.assigned_user_id,
+        requesting_user_id_type: typeof userId
+      });
+
       // Allow admins to delete any notification, or users to delete notifications assigned to them
-      if (userRole !== 'admin' && notification.assigned_user_id !== userId) {
+      if (userRole !== 'admin' && notification.assigned_user_id != userId) {
+        console.log('❌ Permission denied:', {
+          reason: 'User is not admin and notification is not assigned to user',
+          userRole,
+          notification_assigned_to: notification.assigned_user_id,
+          requesting_user: userId,
+          is_admin: userRole === 'admin',
+          is_assigned: notification.assigned_user_id == userId
+        });
+        
         return res.status(403).json({
           success: false,
-          message: 'You can only delete notifications assigned to you. Admins can delete any notification.'
+          message: 'You can only delete notifications assigned to you. Admins can delete any notification.',
+          debug: {
+            notification_assigned_to: notification.assigned_user_id,
+            requesting_user: userId,
+            user_role: userRole,
+            is_admin: userRole === 'admin',
+            is_assigned: notification.assigned_user_id == userId
+          }
         });
       }
 
@@ -490,7 +515,7 @@ class NotificationController {
   async deleteMultipleAssignedNotifications(req, res) {
     try {
       const { notification_ids } = req.body;
-      const userId = req.user?.user_id; // Get user ID from auth middleware
+      const userId = req.user?.userId; // Get user ID from auth middleware
       const userRole = req.user?.role; // Get user role from auth middleware
 
       if (!notification_ids || !Array.isArray(notification_ids) || notification_ids.length === 0) {

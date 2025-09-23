@@ -43,4 +43,9 @@ router.get('/user/:userId', auth, notificationController.getUserNotifications);
 router.post('/assign-all', auth, notificationController.assignAllNotificationsToUsers);
 router.get('/stats/assignment', auth, notificationController.getNotificationAssignmentStats);
 
+// Delete assigned notification routes
+router.delete('/assigned/:id', auth, notificationController.deleteAssignedNotification);
+router.delete('/assigned/multiple', auth, notificationController.deleteMultipleAssignedNotifications);
+router.delete('/assigned/all', auth, notificationController.deleteAllAssignedNotifications);
+
 module.exports = router;

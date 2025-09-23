@@ -431,6 +431,170 @@ class NotificationController {
     }
   }
 
+  // Delete assigned notification (only if user is assigned to it)
+  async deleteAssignedNotification(req, res) {
+    try {
+      const { id } = req.params;
+      const userId = req.user?.user_id; // Get user ID from auth middleware
+
+      console.log('🗑️ Delete assigned notification request:', { id, userId });
+
+      // Check if notification exists and is assigned to the user
+      const checkResult = await pool.query(
+        'SELECT not_id, assigned_user_id, fullname, message FROM notification WHERE not_id = $1',
+        [id]
+      );
+
+      if (checkResult.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Notification not found'
+        });
+      }
+
+      const notification = checkResult.rows[0];
+
+      // Check if notification is assigned to the requesting user
+      if (notification.assigned_user_id !== userId) {
+        return res.status(403).json({
+          success: false,
+          message: 'You can only delete notifications assigned to you'
+        });
+      }
+
+      // Delete the notification
+      const result = await pool.query('DELETE FROM notification WHERE not_id = $1 RETURNING *', [id]);
+
+      res.json({
+        success: true,
+        message: 'Assigned notification deleted successfully',
+        data: { 
+          deletedNotification: result.rows[0],
+          deletedBy: userId
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Delete assigned notification error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to delete assigned notification',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      });
+    }
+  }
+
+  // Delete multiple assigned notifications
+  async deleteMultipleAssignedNotifications(req, res) {
+    try {
+      const { notification_ids } = req.body;
+      const userId = req.user?.user_id; // Get user ID from auth middleware
+
+      if (!notification_ids || !Array.isArray(notification_ids) || notification_ids.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'notification_ids array is required'
+        });
+      }
+
+      console.log('🗑️ Delete multiple assigned notifications request:', { notification_ids, userId });
+
+      // Check which notifications are assigned to the user
+      const placeholders = notification_ids.map((_, index) => `$${index + 1}`).join(',');
+      const checkResult = await pool.query(
+        `SELECT not_id, assigned_user_id FROM notification WHERE not_id IN (${placeholders})`,
+        notification_ids
+      );
+
+      const userNotifications = checkResult.rows.filter(n => n.assigned_user_id === userId);
+      const otherNotifications = checkResult.rows.filter(n => n.assigned_user_id !== userId);
+
+      if (userNotifications.length === 0) {
+        return res.status(403).json({
+          success: false,
+          message: 'No notifications assigned to you found in the provided list'
+        });
+      }
+
+      // Delete only notifications assigned to the user
+      const userNotificationIds = userNotifications.map(n => n.not_id);
+      const deletePlaceholders = userNotificationIds.map((_, index) => `$${index + 1}`).join(',');
+      
+      const result = await pool.query(
+        `DELETE FROM notification WHERE not_id IN (${deletePlaceholders}) RETURNING *`,
+        userNotificationIds
+      );
+
+      res.json({
+        success: true,
+        message: `${result.rows.length} assigned notifications deleted successfully`,
+        data: { 
+          deletedNotifications: result.rows,
+          deletedCount: result.rows.length,
+          requestedCount: notification_ids.length,
+          skippedCount: otherNotifications.length,
+          skippedNotifications: otherNotifications.map(n => n.not_id)
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Delete multiple assigned notifications error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to delete multiple assigned notifications',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      });
+    }
+  }
+
+  // Delete all assigned notifications for a user
+  async deleteAllAssignedNotifications(req, res) {
+    try {
+      const userId = req.user?.user_id; // Get user ID from auth middleware
+
+      console.log('🗑️ Delete all assigned notifications request:', { userId });
+
+      // Get count of assigned notifications before deletion
+      const countResult = await pool.query(
+        'SELECT COUNT(*) FROM notification WHERE assigned_user_id = $1',
+        [userId]
+      );
+
+      const assignedCount = parseInt(countResult.rows[0].count);
+
+      if (assignedCount === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'No assigned notifications found for this user'
+        });
+      }
+
+      // Delete all assigned notifications
+      const result = await pool.query(
+        'DELETE FROM notification WHERE assigned_user_id = $1 RETURNING not_id, fullname, message, created_at',
+        [userId]
+      );
+
+      res.json({
+        success: true,
+        message: `All ${result.rows.length} assigned notifications deleted successfully`,
+        data: { 
+          deletedNotifications: result.rows,
+          deletedCount: result.rows.length,
+          deletedBy: userId
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Delete all assigned notifications error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to delete all assigned notifications',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      });
+    }
+  }
+
   // Get notifications by location (e.g., within a certain radius)
   async getNotificationsByLocation(req, res) {
     try {
@@ -890,37 +1054,70 @@ class NotificationController {
       const totalResult = await pool.query('SELECT COUNT(*) FROM notification');
       const totalNotifications = parseInt(totalResult.rows[0].count);
 
-      // Get assigned notifications
-      const assignedResult = await pool.query('SELECT COUNT(*) FROM notification WHERE assigned_user_id IS NOT NULL');
-      const assignedNotifications = parseInt(assignedResult.rows[0].count);
+      // Get assigned notifications with read/unread breakdown
+      const assignedResult = await pool.query(`
+        SELECT 
+          COUNT(*) as total_assigned,
+          COUNT(CASE WHEN is_read = true THEN 1 END) as read_assigned,
+          COUNT(CASE WHEN is_read = false THEN 1 END) as unread_assigned
+        FROM notification 
+        WHERE assigned_user_id IS NOT NULL
+      `);
+      const assignedData = assignedResult.rows[0];
+      const assignedNotifications = parseInt(assignedData.total_assigned);
+      const readAssigned = parseInt(assignedData.read_assigned);
+      const unreadAssigned = parseInt(assignedData.unread_assigned);
 
       // Get unassigned notifications
       const unassignedNotifications = totalNotifications - assignedNotifications;
 
-      // Get notifications by sector
+      // Get notifications by sector with read/unread breakdown
       const sectorResult = await pool.query(`
         SELECT 
           n.near_rib as sector,
           COUNT(*) as total_notifications,
           COUNT(n.assigned_user_id) as assigned_notifications,
-          COUNT(*) - COUNT(n.assigned_user_id) as unassigned_notifications
+          COUNT(*) - COUNT(n.assigned_user_id) as unassigned_notifications,
+          COUNT(CASE WHEN n.assigned_user_id IS NOT NULL AND n.is_read = true THEN 1 END) as assigned_read,
+          COUNT(CASE WHEN n.assigned_user_id IS NOT NULL AND n.is_read = false THEN 1 END) as assigned_unread
         FROM notification n
         GROUP BY n.near_rib
         ORDER BY total_notifications DESC
       `);
 
-      // Get users with near_rib role
+      // Get users with near_rib role and their read/unread statistics
       const usersResult = await pool.query(`
         SELECT 
           u.user_id,
           u.fullname,
           u.sector,
-          COUNT(n.not_id) as assigned_notifications
+          u.position,
+          COUNT(n.not_id) as total_assigned_notifications,
+          COUNT(CASE WHEN n.is_read = true THEN 1 END) as read_notifications,
+          COUNT(CASE WHEN n.is_read = false THEN 1 END) as unread_notifications
         FROM users u
         LEFT JOIN notification n ON u.user_id = n.assigned_user_id
         WHERE u.role = 'near_rib'
-        GROUP BY u.user_id, u.fullname, u.sector
-        ORDER BY assigned_notifications DESC
+        GROUP BY u.user_id, u.fullname, u.sector, u.position
+        ORDER BY total_assigned_notifications DESC
+      `);
+
+      // Get recent assignment activity
+      const recentActivityResult = await pool.query(`
+        SELECT 
+          n.not_id,
+          n.near_rib,
+          n.fullname,
+          n.message,
+          n.created_at,
+          n.is_read,
+          u.fullname as assigned_user_name,
+          u.sector as user_sector
+        FROM notification n
+        LEFT JOIN users u ON n.assigned_user_id = u.user_id
+        WHERE n.assigned_user_id IS NOT NULL
+        ORDER BY n.created_at DESC
+        LIMIT 10
       `);
 
       res.json({
@@ -931,10 +1128,22 @@ class NotificationController {
             total_notifications: totalNotifications,
             assigned_notifications: assignedNotifications,
             unassigned_notifications: unassignedNotifications,
-            assignment_percentage: totalNotifications > 0 ? Math.round((assignedNotifications / totalNotifications) * 100) : 0
+            assignment_percentage: totalNotifications > 0 ? Math.round((assignedNotifications / totalNotifications) * 100) : 0,
+            assigned_read_notifications: readAssigned,
+            assigned_unread_notifications: unreadAssigned,
+            assigned_read_percentage: assignedNotifications > 0 ? Math.round((readAssigned / assignedNotifications) * 100) : 0
           },
-          sector_stats: sectorResult.rows,
-          user_stats: usersResult.rows
+          sector_stats: sectorResult.rows.map(sector => ({
+            ...sector,
+            assigned_read_percentage: sector.assigned_notifications > 0 ? 
+              Math.round((parseInt(sector.assigned_read) / parseInt(sector.assigned_notifications)) * 100) : 0
+          })),
+          user_stats: usersResult.rows.map(user => ({
+            ...user,
+            read_percentage: user.total_assigned_notifications > 0 ? 
+              Math.round((parseInt(user.read_notifications) / parseInt(user.total_assigned_notifications)) * 100) : 0
+          })),
+          recent_activity: recentActivityResult.rows
         }
       });
 

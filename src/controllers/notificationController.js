@@ -29,9 +29,9 @@ function generateGoogleMapsLinks(latitude, longitude, locationName = '') {
 
 // Helper function to get location from IP
 async function getLocationFromIP(ip) {
-  // Skip geolocation for localhost and private IPs
+  // Skip geolocation for localhost and private IPs - these won't have real GPS data
   if (ip === '127.0.0.1' || ip === '::1' || ip.startsWith('192.168.') || ip.startsWith('10.') || ip.startsWith('172.')) {
-    console.log('⚠️ Local/private IP detected. Using Rwanda fallback location.');
+    console.log('⚠️ Local/private IP detected. Cannot get real GPS location.');
     return null;
   }
   
@@ -123,7 +123,7 @@ class NotificationController {
                       req.headers['x-real-ip'] ||
                       '127.0.0.1';
 
-      // Always try to get real GPS location from IP
+      // Get real GPS location from device IP - NO FALLBACK LOCATIONS
       let finalLatitude, finalLongitude, finalLocationName;
       
       try {
@@ -134,35 +134,19 @@ class NotificationController {
           finalLocationName = ipLocation.location_name;
           console.log(`📍 Real GPS location detected from IP ${clientIP}: ${finalLocationName} (${finalLatitude}, ${finalLongitude})`);
         } else {
-          // Fallback: Use random Rwanda location if IP geolocation fails
-          const rwandaLocations = [
-            { lat: -1.9441, lng: 30.0619, name: 'Kigali, Rwanda' },
-            { lat: -2.5833, lng: 29.7500, name: 'Huye, Rwanda' },
-            { lat: -1.5000, lng: 29.6333, name: 'Musanze, Rwanda' },
-            { lat: -2.6000, lng: 30.7500, name: 'Gisenyi, Rwanda' },
-            { lat: -1.9500, lng: 30.4333, name: 'Rwamagana, Rwanda' }
-          ];
-          const randomLocation = rwandaLocations[Math.floor(Math.random() * rwandaLocations.length)];
-          finalLatitude = randomLocation.lat;
-          finalLongitude = randomLocation.lng;
-          finalLocationName = randomLocation.name;
-          console.log(`📍 Using random Rwanda location as fallback: ${randomLocation.name}`);
+          // No fallback location - only use real device location
+          finalLatitude = null;
+          finalLongitude = null;
+          finalLocationName = null;
+          console.log(`⚠️ No GPS location detected from IP ${clientIP} - notification will be saved without location data`);
         }
       } catch (error) {
         console.error('❌ Location detection error:', error.message);
-        // Use fallback location if all else fails
-        const rwandaLocations = [
-          { lat: -1.9441, lng: 30.0619, name: 'Kigali, Rwanda' },
-          { lat: -2.5833, lng: 29.7500, name: 'Huye, Rwanda' },
-          { lat: -1.5000, lng: 29.6333, name: 'Musanze, Rwanda' },
-          { lat: -2.6000, lng: 30.7500, name: 'Gisenyi, Rwanda' },
-          { lat: -1.9500, lng: 30.4333, name: 'Rwamagana, Rwanda' }
-        ];
-        const randomLocation = rwandaLocations[Math.floor(Math.random() * rwandaLocations.length)];
-        finalLatitude = randomLocation.lat;
-        finalLongitude = randomLocation.lng;
-        finalLocationName = randomLocation.name;
-        console.log(`📍 Using emergency fallback location: ${randomLocation.name}`);
+        // No fallback location - only use real device location
+        finalLatitude = null;
+        finalLongitude = null;
+        finalLocationName = null;
+        console.log(`⚠️ GPS location detection failed for IP ${clientIP} - notification will be saved without location data`);
       }
 
       // Validate GPS coordinates if we have them
@@ -192,11 +176,29 @@ class NotificationController {
       console.log('🗄️ Inserting notification into database...');
       console.log('📍 GPS Data:', { finalLatitude, finalLongitude, finalLocationName });
       
+      // Insert notification first
       const result = await pool.query(
         `INSERT INTO notification (near_rib, fullname, address, phone, message, latitude, longitude, location_name)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
         [near_rib, fullname, address, phone, message, finalLatitude || null, finalLongitude || null, finalLocationName || null]
       );
+
+      // Assign notification to users with role = 'near_rib' and matching sector
+      try {
+        await pool.query(
+          `UPDATE notification n
+           SET assigned_user_id = u.user_id
+           FROM users u
+           WHERE n.not_id = $1
+             AND n.near_rib = u.sector
+             AND u.role = 'near_rib'`,
+          [result.rows[0].not_id]
+        );
+        console.log('✅ Notification assigned to near_rib users');
+      } catch (assignError) {
+        console.log('⚠️ Could not assign notification to users:', assignError.message);
+        // Continue even if assignment fails
+      }
       
       console.log('✅ Notification inserted successfully:', result.rows[0]);
 
@@ -205,20 +207,25 @@ class NotificationController {
 
       res.status(201).json({
         success: true,
-        message: 'Notification sent successfully with automatic location tracking',
+        message: finalLatitude && finalLongitude 
+          ? 'Notification sent successfully with real GPS location tracking' 
+          : 'Notification sent successfully (no GPS location detected)',
         data: { 
           notification: newNotification,
           device_tracking: {
             client_ip: clientIP,
             location_detected: !!(finalLatitude && finalLongitude),
-            location_source: 'automatic_detection',
+            location_source: finalLatitude && finalLongitude ? 'real_device_gps' : 'no_location_available',
             location: finalLatitude && finalLongitude ? {
               latitude: parseFloat(finalLatitude),
               longitude: parseFloat(finalLongitude),
-              location_name: finalLocationName || 'Auto-detected Location',
+              location_name: finalLocationName || 'Real Device Location',
               google_maps_links: googleMapsLinks
             } : null,
-            google_maps_links: googleMapsLinks
+            google_maps_links: googleMapsLinks,
+            note: finalLatitude && finalLongitude 
+              ? 'Real device location successfully detected and tracked' 
+              : 'Could not detect real device location - notification saved without GPS data'
           }
         }
       });
@@ -694,6 +701,235 @@ class NotificationController {
       res.status(500).json({
         success: false,
         message: 'Failed to update multiple notifications'
+      });
+    }
+  }
+
+  // Get notifications assigned to a specific user
+  async getUserNotifications(req, res) {
+    try {
+      const { userId } = req.params;
+      const { page = 1, limit = 10, unread_only = false } = req.query;
+
+      console.log('🔍 Get user notifications request:', { userId, page, limit, unread_only });
+
+      // Validate user exists and has near_rib role
+      const userCheck = await pool.query(
+        'SELECT user_id, fullname, sector, role FROM users WHERE user_id = $1 AND role = $2',
+        [userId, 'near_rib']
+      );
+
+      if (userCheck.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found or does not have near_rib role'
+        });
+      }
+
+      const user = userCheck.rows[0];
+      console.log('✅ User found:', user);
+
+      // Calculate pagination
+      const offset = (parseInt(page) - 1) * parseInt(limit);
+
+      // Build query based on filters
+      let query = `
+        SELECT 
+          n.not_id,
+          n.near_rib,
+          n.fullname,
+          n.address,
+          n.phone,
+          n.message,
+          n.created_at,
+          n.is_read,
+          n.latitude,
+          n.longitude,
+          n.location_name,
+          n.assigned_user_id,
+          CASE 
+            WHEN n.latitude IS NOT NULL AND n.longitude IS NOT NULL 
+            THEN true 
+            ELSE false 
+          END as has_gps_location
+        FROM notification n
+        WHERE n.assigned_user_id = $1
+      `;
+
+      const queryParams = [userId];
+
+      if (unread_only === 'true') {
+        query += ' AND n.is_read = false';
+      }
+
+      query += ' ORDER BY n.created_at DESC LIMIT $2 OFFSET $3';
+
+      queryParams.push(parseInt(limit), offset);
+
+      const result = await pool.query(query, queryParams);
+
+      // Format notifications with GPS data and Google Maps links
+      const notifications = result.rows.map(notification => {
+        const googleMapsLinks = generateGoogleMapsLinks(notification.latitude, notification.longitude, notification.location_name);
+        
+        return {
+          ...notification,
+          gps_location: notification.has_gps_location ? {
+            latitude: parseFloat(notification.latitude),
+            longitude: parseFloat(notification.longitude),
+            location_name: notification.location_name || 'Unknown Location',
+            google_maps_links: googleMapsLinks
+          } : null,
+          google_maps_links: googleMapsLinks
+        };
+      });
+
+      // Get total count for pagination
+      let countQuery = 'SELECT COUNT(*) FROM notification WHERE assigned_user_id = $1';
+      const countParams = [userId];
+
+      if (unread_only === 'true') {
+        countQuery += ' AND is_read = false';
+      }
+
+      const countResult = await pool.query(countQuery, countParams);
+      const totalItems = parseInt(countResult.rows[0].count);
+
+      res.json({
+        success: true,
+        message: `Notifications for user ${user.fullname} (${user.sector})`,
+        data: {
+          user: {
+            user_id: user.user_id,
+            fullname: user.fullname,
+            sector: user.sector,
+            role: user.role
+          },
+          notifications: notifications,
+          pagination: {
+            currentPage: parseInt(page),
+            totalPages: Math.ceil(totalItems / parseInt(limit)),
+            totalItems: totalItems,
+            itemsPerPage: parseInt(limit)
+          }
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Get user notifications error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get user notifications',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      });
+    }
+  }
+
+  // Assign all existing notifications to users
+  async assignAllNotificationsToUsers(req, res) {
+    try {
+      console.log('🔄 Assigning all notifications to users...');
+
+      const result = await pool.query(
+        `UPDATE notification n
+         SET assigned_user_id = u.user_id
+         FROM users u
+         WHERE n.near_rib = u.sector
+           AND u.role = 'near_rib'
+           AND n.assigned_user_id IS NULL`
+      );
+
+      console.log('✅ Assignment query executed');
+
+      // Get count of assigned notifications
+      const countResult = await pool.query(
+        'SELECT COUNT(*) FROM notification WHERE assigned_user_id IS NOT NULL'
+      );
+
+      const assignedCount = parseInt(countResult.rows[0].count);
+
+      res.json({
+        success: true,
+        message: `Successfully assigned ${assignedCount} notifications to users`,
+        data: {
+          total_assigned: assignedCount,
+          assignment_details: 'All notifications with near_rib matching user sector have been assigned to near_rib users'
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Assign notifications error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to assign notifications to users',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      });
+    }
+  }
+
+  // Get notification assignment statistics
+  async getNotificationAssignmentStats(req, res) {
+    try {
+      console.log('📊 Getting notification assignment statistics...');
+
+      // Get total notifications
+      const totalResult = await pool.query('SELECT COUNT(*) FROM notification');
+      const totalNotifications = parseInt(totalResult.rows[0].count);
+
+      // Get assigned notifications
+      const assignedResult = await pool.query('SELECT COUNT(*) FROM notification WHERE assigned_user_id IS NOT NULL');
+      const assignedNotifications = parseInt(assignedResult.rows[0].count);
+
+      // Get unassigned notifications
+      const unassignedNotifications = totalNotifications - assignedNotifications;
+
+      // Get notifications by sector
+      const sectorResult = await pool.query(`
+        SELECT 
+          n.near_rib as sector,
+          COUNT(*) as total_notifications,
+          COUNT(n.assigned_user_id) as assigned_notifications,
+          COUNT(*) - COUNT(n.assigned_user_id) as unassigned_notifications
+        FROM notification n
+        GROUP BY n.near_rib
+        ORDER BY total_notifications DESC
+      `);
+
+      // Get users with near_rib role
+      const usersResult = await pool.query(`
+        SELECT 
+          u.user_id,
+          u.fullname,
+          u.sector,
+          COUNT(n.not_id) as assigned_notifications
+        FROM users u
+        LEFT JOIN notification n ON u.user_id = n.assigned_user_id
+        WHERE u.role = 'near_rib'
+        GROUP BY u.user_id, u.fullname, u.sector
+        ORDER BY assigned_notifications DESC
+      `);
+
+      res.json({
+        success: true,
+        message: 'Notification assignment statistics retrieved successfully',
+        data: {
+          overall_stats: {
+            total_notifications: totalNotifications,
+            assigned_notifications: assignedNotifications,
+            unassigned_notifications: unassignedNotifications,
+            assignment_percentage: totalNotifications > 0 ? Math.round((assignedNotifications / totalNotifications) * 100) : 0
+          },
+          sector_stats: sectorResult.rows,
+          user_stats: usersResult.rows
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Get assignment stats error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get notification assignment statistics',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
       });
     }
   }

@@ -38,4 +38,9 @@ router.patch('/:id/read', auth, notificationController.markNotificationRead);
 router.patch('/:id/toggle-read', auth, notificationController.toggleNotificationRead);
 router.patch('/mark-multiple-read', auth, notificationController.markMultipleNotificationsRead);
 
+// User-specific notification routes
+router.get('/user/:userId', auth, notificationController.getUserNotifications);
+router.post('/assign-all', auth, notificationController.assignAllNotificationsToUsers);
+router.get('/stats/assignment', auth, notificationController.getNotificationAssignmentStats);
+
 module.exports = router;

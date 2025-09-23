@@ -1154,19 +1154,63 @@ class NotificationController {
             assignment_percentage: totalNotifications > 0 ? Math.round((assignedNotifications / totalNotifications) * 100) : 0,
             assigned_read_notifications: readAssigned,
             assigned_unread_notifications: unreadAssigned,
-            assigned_read_percentage: assignedNotifications > 0 ? Math.round((readAssigned / assignedNotifications) * 100) : 0
+            assigned_read_percentage: assignedNotifications > 0 ? Math.round((readAssigned / assignedNotifications) * 100) : 0,
+            // Enhanced breakdown for better visibility
+            assignment_breakdown: {
+              total_assigned: assignedNotifications,
+              read_assigned: readAssigned,
+              unread_assigned: unreadAssigned,
+              read_rate: assignedNotifications > 0 ? Math.round((readAssigned / assignedNotifications) * 100) : 0,
+              unread_rate: assignedNotifications > 0 ? Math.round((unreadAssigned / assignedNotifications) * 100) : 0
+            }
           },
           sector_stats: sectorResult.rows.map(sector => ({
             ...sector,
             assigned_read_percentage: sector.assigned_notifications > 0 ? 
-              Math.round((parseInt(sector.assigned_read) / parseInt(sector.assigned_notifications)) * 100) : 0
+              Math.round((parseInt(sector.assigned_read) / parseInt(sector.assigned_notifications)) * 100) : 0,
+            // Enhanced sector breakdown
+            sector_assignment_breakdown: {
+              total_assigned: parseInt(sector.assigned_notifications),
+              read_assigned: parseInt(sector.assigned_read),
+              unread_assigned: parseInt(sector.assigned_unread),
+              read_rate: sector.assigned_notifications > 0 ? 
+                Math.round((parseInt(sector.assigned_read) / parseInt(sector.assigned_notifications)) * 100) : 0,
+              unread_rate: sector.assigned_notifications > 0 ? 
+                Math.round((parseInt(sector.assigned_unread) / parseInt(sector.assigned_notifications)) * 100) : 0
+            }
           })),
           user_stats: usersResult.rows.map(user => ({
             ...user,
             read_percentage: user.total_assigned_notifications > 0 ? 
-              Math.round((parseInt(user.read_notifications) / parseInt(user.total_assigned_notifications)) * 100) : 0
+              Math.round((parseInt(user.read_notifications) / parseInt(user.total_assigned_notifications)) * 100) : 0,
+            // Enhanced user breakdown
+            user_assignment_breakdown: {
+              total_assigned: parseInt(user.total_assigned_notifications),
+              read_assigned: parseInt(user.read_notifications),
+              unread_assigned: parseInt(user.unread_notifications),
+              read_rate: user.total_assigned_notifications > 0 ? 
+                Math.round((parseInt(user.read_notifications) / parseInt(user.total_assigned_notifications)) * 100) : 0,
+              unread_rate: user.total_assigned_notifications > 0 ? 
+                Math.round((parseInt(user.unread_notifications) / parseInt(user.total_assigned_notifications)) * 100) : 0
+            }
           })),
-          recent_activity: recentActivityResult.rows
+          recent_activity: recentActivityResult.rows,
+          // Summary for quick overview
+          summary: {
+            total_notifications: totalNotifications,
+            assignment_status: {
+              assigned: assignedNotifications,
+              unassigned: unassignedNotifications,
+              assignment_rate: totalNotifications > 0 ? Math.round((assignedNotifications / totalNotifications) * 100) : 0
+            },
+            read_status: {
+              read: readAssigned,
+              unread: unreadAssigned,
+              read_rate: assignedNotifications > 0 ? Math.round((readAssigned / assignedNotifications) * 100) : 0
+            },
+            active_users: usersResult.rows.length,
+            active_sectors: sectorResult.rows.filter(s => parseInt(s.assigned_notifications) > 0).length
+          }
         }
       });
 

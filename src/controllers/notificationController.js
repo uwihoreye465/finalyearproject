@@ -461,18 +461,37 @@ class NotificationController {
         requesting_user_id: userId,
         requesting_user_role: userRole,
         assigned_user_id_type: typeof notification.assigned_user_id,
-        requesting_user_id_type: typeof userId
+        requesting_user_id_type: typeof userId,
+        strict_equality: notification.assigned_user_id === userId,
+        loose_equality: notification.assigned_user_id == userId,
+        string_comparison: String(notification.assigned_user_id) === String(userId)
       });
 
-      // Allow admins to delete any notification, or users to delete notifications assigned to them
-      if (userRole !== 'admin' && notification.assigned_user_id != userId) {
+      // Check permissions: Admin can delete any, near_rib users can delete assigned notifications
+      const isAdmin = userRole === 'admin';
+      const isNearRibUser = userRole === 'near_rib';
+      const isAssignedToUser = notification.assigned_user_id == userId;
+      const canDelete = isAdmin || (isNearRibUser && isAssignedToUser);
+
+      console.log('🔐 Permission check:', {
+        isAdmin,
+        isNearRibUser,
+        isAssignedToUser,
+        canDelete,
+        userRole,
+        notification_assigned_to: notification.assigned_user_id,
+        requesting_user: userId
+      });
+
+      if (!canDelete) {
         console.log('❌ Permission denied:', {
-          reason: 'User is not admin and notification is not assigned to user',
+          reason: 'User does not have permission to delete this notification',
           userRole,
           notification_assigned_to: notification.assigned_user_id,
           requesting_user: userId,
-          is_admin: userRole === 'admin',
-          is_assigned: notification.assigned_user_id == userId
+          is_admin: isAdmin,
+          is_near_rib: isNearRibUser,
+          is_assigned: isAssignedToUser
         });
         
         return res.status(403).json({
@@ -482,8 +501,10 @@ class NotificationController {
             notification_assigned_to: notification.assigned_user_id,
             requesting_user: userId,
             user_role: userRole,
-            is_admin: userRole === 'admin',
-            is_assigned: notification.assigned_user_id == userId
+            is_admin: isAdmin,
+            is_near_rib: isNearRibUser,
+            is_assigned: isAssignedToUser,
+            can_delete: canDelete
           }
         });
       }
@@ -493,11 +514,12 @@ class NotificationController {
 
       res.json({
         success: true,
-        message: userRole === 'admin' ? 'Notification deleted successfully by admin' : 'Assigned notification deleted successfully',
+        message: isAdmin ? 'Notification deleted successfully by admin' : 'Assigned notification deleted successfully by near_rib user',
         data: { 
           deletedNotification: result.rows[0],
           deletedBy: userId,
-          deletedByRole: userRole
+          deletedByRole: userRole,
+          deletionReason: isAdmin ? 'admin_privilege' : 'assigned_notification'
         }
       });
 

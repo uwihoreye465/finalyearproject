@@ -906,6 +906,110 @@ class NotificationController {
     }
   }
 
+  // Mark all notifications as read/unread for a user
+  async markAllNotificationsReadForUser(req, res) {
+    try {
+      const { is_read = true } = req.body;
+      const userId = req.user?.userId;
+      const userRole = req.user?.role;
+
+      console.log('🔍 Mark all notifications read for user request:', { userId, userRole, is_read });
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: 'User not authenticated'
+        });
+      }
+
+      // Update all notifications for the user
+      let updateQuery;
+      let queryParams;
+
+      if (userRole === 'admin') {
+        // Admin can mark all notifications
+        updateQuery = 'UPDATE notification SET is_read = $1, updated_at = CURRENT_TIMESTAMP RETURNING not_id, is_read';
+        queryParams = [is_read];
+      } else {
+        // Regular users can only mark their assigned notifications
+        updateQuery = 'UPDATE notification SET is_read = $1, updated_at = CURRENT_TIMESTAMP WHERE assigned_user_id = $2 RETURNING not_id, is_read';
+        queryParams = [is_read, userId];
+      }
+
+      const result = await pool.query(updateQuery, queryParams);
+
+      res.json({
+        success: true,
+        message: `${result.rows.length} notifications marked as ${is_read ? 'read' : 'unread'} for user`,
+        data: { 
+          updated_notifications: result.rows,
+          total_updated: result.rows.length,
+          user_id: userId,
+          user_role: userRole,
+          new_status: is_read
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Mark all notifications read for user error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to mark all notifications for user',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      });
+    }
+  }
+
+  // Mark all notifications as read/unread by sector
+  async markAllNotificationsReadBySector(req, res) {
+    try {
+      const { sector, is_read = true } = req.body;
+      const userId = req.user?.userId;
+      const userRole = req.user?.role;
+
+      console.log('🔍 Mark all notifications read by sector request:', { sector, userId, userRole, is_read });
+
+      if (!sector) {
+        return res.status(400).json({
+          success: false,
+          message: 'Sector is required'
+        });
+      }
+
+      if (userRole !== 'admin') {
+        return res.status(403).json({
+          success: false,
+          message: 'Only admins can mark notifications by sector'
+        });
+      }
+
+      // Update all notifications for the sector
+      const result = await pool.query(
+        'UPDATE notification SET is_read = $1, updated_at = CURRENT_TIMESTAMP WHERE near_rib = $2 RETURNING not_id, is_read, near_rib',
+        [is_read, sector]
+      );
+
+      res.json({
+        success: true,
+        message: `${result.rows.length} notifications marked as ${is_read ? 'read' : 'unread'} for sector ${sector}`,
+        data: { 
+          updated_notifications: result.rows,
+          total_updated: result.rows.length,
+          sector: sector,
+          new_status: is_read
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Mark all notifications read by sector error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to mark notifications by sector',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      });
+    }
+  }
+
   // Get notifications assigned to a specific user
   async getUserNotifications(req, res) {
     try {
@@ -1021,6 +1125,154 @@ class NotificationController {
       res.status(500).json({
         success: false,
         message: 'Failed to get user notifications',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      });
+    }
+  }
+
+  // Get all notifications for any user (not just assigned ones)
+  async getAllNotificationsForUser(req, res) {
+    try {
+      const { page = 1, limit = 10, unread_only = false, sector = null } = req.query;
+      const userId = req.user?.userId;
+      const userRole = req.user?.role;
+
+      console.log('🔍 Get all notifications for user request:', { userId, userRole, page, limit, unread_only, sector });
+
+      // Calculate pagination
+      const offset = (parseInt(page) - 1) * parseInt(limit);
+
+      // Build query - show all notifications, not just assigned ones
+      let query = `
+        SELECT 
+          n.not_id,
+          n.near_rib,
+          n.fullname,
+          n.address,
+          n.phone,
+          n.message,
+          n.created_at,
+          n.is_read,
+          n.latitude,
+          n.longitude,
+          n.location_name,
+          n.assigned_user_id,
+          CASE 
+            WHEN n.latitude IS NOT NULL AND n.longitude IS NOT NULL 
+            THEN true 
+            ELSE false 
+          END as has_gps_location,
+          CASE 
+            WHEN n.assigned_user_id = $1 
+            THEN true 
+            ELSE false 
+          END as is_assigned_to_user
+        FROM notification n
+        WHERE 1=1
+      `;
+
+      const queryParams = [userId];
+
+      // Filter by sector if provided
+      if (sector) {
+        query += ' AND n.near_rib = $' + (queryParams.length + 1);
+        queryParams.push(sector);
+      }
+
+      // Filter by read status if requested
+      if (unread_only === 'true') {
+        query += ' AND n.is_read = false';
+      }
+
+      query += ' ORDER BY n.created_at DESC LIMIT $' + (queryParams.length + 1) + ' OFFSET $' + (queryParams.length + 2);
+      queryParams.push(parseInt(limit), offset);
+
+      const result = await pool.query(query, queryParams);
+
+      // Format notifications with GPS data and Google Maps links
+      const notifications = result.rows.map(notification => {
+        const googleMapsLinks = generateGoogleMapsLinks(notification.latitude, notification.longitude, notification.location_name);
+        
+        return {
+          ...notification,
+          gps_location: notification.has_gps_location ? {
+            latitude: parseFloat(notification.latitude),
+            longitude: parseFloat(notification.longitude),
+            location_name: notification.location_name || 'Unknown Location',
+            google_maps_links: googleMapsLinks
+          } : null,
+          google_maps_links: googleMapsLinks
+        };
+      });
+
+      // Get total count for pagination
+      let countQuery = 'SELECT COUNT(*) FROM notification WHERE 1=1';
+      const countParams = [userId];
+
+      if (sector) {
+        countQuery += ' AND near_rib = $' + (countParams.length + 1);
+        countParams.push(sector);
+      }
+
+      if (unread_only === 'true') {
+        countQuery += ' AND is_read = false';
+      }
+
+      const countResult = await pool.query(countQuery, countParams);
+      const totalItems = parseInt(countResult.rows[0].count);
+
+      // Get read/unread statistics
+      const statsQuery = `
+        SELECT 
+          COUNT(*) as total,
+          COUNT(CASE WHEN is_read = true THEN 1 END) as read_count,
+          COUNT(CASE WHEN is_read = false THEN 1 END) as unread_count,
+          COUNT(CASE WHEN assigned_user_id = $1 THEN 1 END) as assigned_to_user,
+          COUNT(CASE WHEN assigned_user_id = $1 AND is_read = true THEN 1 END) as assigned_read,
+          COUNT(CASE WHEN assigned_user_id = $1 AND is_read = false THEN 1 END) as assigned_unread
+        FROM notification
+        ${sector ? 'WHERE near_rib = $2' : ''}
+      `;
+      
+      const statsParams = sector ? [userId, sector] : [userId];
+      const statsResult = await pool.query(statsQuery, statsParams);
+      const stats = statsResult.rows[0];
+
+      res.json({
+        success: true,
+        message: 'All notifications retrieved successfully',
+        data: {
+          user: {
+            user_id: userId,
+            role: userRole
+          },
+          notifications: notifications,
+          statistics: {
+            total_notifications: parseInt(stats.total),
+            read_notifications: parseInt(stats.read_count),
+            unread_notifications: parseInt(stats.unread_count),
+            assigned_to_user: parseInt(stats.assigned_to_user),
+            assigned_read: parseInt(stats.assigned_read),
+            assigned_unread: parseInt(stats.assigned_unread),
+            read_rate: parseInt(stats.total) > 0 ? Math.round((parseInt(stats.read_count) / parseInt(stats.total)) * 100) : 0,
+            unread_rate: parseInt(stats.total) > 0 ? Math.round((parseInt(stats.unread_count) / parseInt(stats.total)) * 100) : 0,
+            assigned_read_rate: parseInt(stats.assigned_to_user) > 0 ? Math.round((parseInt(stats.assigned_read) / parseInt(stats.assigned_to_user)) * 100) : 0,
+            assigned_unread_rate: parseInt(stats.assigned_to_user) > 0 ? Math.round((parseInt(stats.assigned_unread) / parseInt(stats.assigned_to_user)) * 100) : 0
+          },
+          pagination: {
+            currentPage: parseInt(page),
+            totalPages: Math.ceil(totalItems / parseInt(limit)),
+            totalItems: totalItems,
+            itemsPerPage: parseInt(limit)
+          }
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Get all notifications for user error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get all notifications for user',
         error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
       });
     }

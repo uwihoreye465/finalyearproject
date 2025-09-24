@@ -37,9 +37,12 @@ router.delete('/:id', auth, notificationController.deleteNotification);
 router.patch('/:id/read', auth, notificationController.markNotificationRead);
 router.patch('/:id/toggle-read', auth, notificationController.toggleNotificationRead);
 router.patch('/mark-multiple-read', auth, notificationController.markMultipleNotificationsRead);
+router.patch('/mark-all-read', auth, notificationController.markAllNotificationsReadForUser);
+router.patch('/mark-by-sector-read', auth, notificationController.markAllNotificationsReadBySector);
 
 // User-specific notification routes
 router.get('/user/:userId', auth, notificationController.getUserNotifications);
+router.get('/user-all', auth, notificationController.getAllNotificationsForUser);
 router.post('/assign-all', auth, notificationController.assignAllNotificationsToUsers);
 router.get('/stats/assignment', auth, notificationController.getNotificationAssignmentStats);
 

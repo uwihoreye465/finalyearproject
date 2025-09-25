@@ -5,6 +5,28 @@ const pool = require('../config/database');
 
 const createArrested = async (req, res) => {
     try {
+        // Handle both JSON and form-data requests
+        let requestData;
+        
+        if (req.is('application/json')) {
+            // Handle JSON request
+            requestData = req.body;
+        } else if (req.is('multipart/form-data')) {
+            // Handle form-data request (with file upload)
+            requestData = req.body;
+        } else {
+            // Try to parse as JSON if content-type is not specified
+            try {
+                requestData = req.body;
+            } catch (parseError) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid request format. Use either JSON or form-data with image upload.',
+                    error: 'Expected valid JSON or multipart/form-data'
+                });
+            }
+        }
+
         const {
             fullname,
             crime_type,
@@ -12,8 +34,9 @@ const createArrested = async (req, res) => {
             arrest_location,
             id_type,
             id_number,
-            criminal_record_id // Allow criminal_record_id to be provided
-        } = req.body;
+            criminal_record_id, // Allow criminal_record_id to be provided
+            image_url // Allow image_url to be provided for JSON requests
+        } = requestData;
 
         // Validate required fields
         if (!fullname || !crime_type) {
@@ -34,10 +57,15 @@ const createArrested = async (req, res) => {
 
         // Handle image upload
         let finalImageUrl = null;
+        
         if (req.file) {
             // File is already saved by multer, just generate the URL
             finalImageUrl = `/uploads/arrested/images/${req.file.filename}`;
             console.log(`📸 Image uploaded successfully: ${finalImageUrl}`);
+        } else if (image_url) {
+            // Use provided image_url for JSON requests
+            finalImageUrl = image_url;
+            console.log(`📸 Using provided image URL: ${finalImageUrl}`);
         }
 
         // Validate criminal_record_id if provided

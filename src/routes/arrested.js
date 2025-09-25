@@ -55,20 +55,27 @@ router.get('/:id', arrestedController.getArrestedById);
 
 // Admin/Staff only routes with image upload
 router.post('/', auth, (req, res, next) => {
-    imageUpload.single('image')(req, res, function(err) {
-        if (err instanceof multer.MulterError) {
-            return res.status(400).json({
-                success: false,
-                message: 'Image upload error: ' + err.message
-            });
-        } else if (err) {
-            return res.status(400).json({
-                success: false,
-                message: err.message
-            });
-        }
+    // Check if request is JSON or form-data
+    if (req.is('application/json')) {
+        // Handle JSON request without multer
         next();
-    });
+    } else {
+        // Handle form-data request with multer
+        imageUpload.single('image')(req, res, function(err) {
+            if (err instanceof multer.MulterError) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Image upload error: ' + err.message
+                });
+            } else if (err) {
+                return res.status(400).json({
+                    success: false,
+                    message: err.message
+                });
+            }
+            next();
+        });
+    }
 }, arrestedController.createArrested);
 
 // Update arrested record with image

@@ -877,11 +877,11 @@ class NotificationController {
         });
       }
 
-      // Update multiple notifications
+      // Update multiple notifications - without updated_at column
       const placeholders = notification_ids.map((_, index) => `$${index + 1}`).join(',');
       const result = await pool.query(
         `UPDATE notification 
-         SET is_read = $${notification_ids.length + 1}, updated_at = CURRENT_TIMESTAMP 
+         SET is_read = $${notification_ids.length + 1} 
          WHERE not_id IN (${placeholders}) 
          RETURNING not_id, is_read`,
         [...notification_ids, is_read]
@@ -922,17 +922,17 @@ class NotificationController {
         });
       }
 
-      // Update all notifications for the user
+      // Update all notifications for the user - without updated_at column
       let updateQuery;
       let queryParams;
 
       if (userRole === 'admin') {
         // Admin can mark all notifications
-        updateQuery = 'UPDATE notification SET is_read = $1, updated_at = CURRENT_TIMESTAMP RETURNING not_id, is_read';
+        updateQuery = 'UPDATE notification SET is_read = $1 RETURNING not_id, is_read';
         queryParams = [is_read];
       } else {
         // Regular users can only mark their assigned notifications
-        updateQuery = 'UPDATE notification SET is_read = $1, updated_at = CURRENT_TIMESTAMP WHERE assigned_user_id = $2 RETURNING not_id, is_read';
+        updateQuery = 'UPDATE notification SET is_read = $1 WHERE assigned_user_id = $2 RETURNING not_id, is_read';
         queryParams = [is_read, userId];
       }
 
@@ -976,18 +976,26 @@ class NotificationController {
         });
       }
 
-      if (userRole !== 'admin') {
+      let updateQuery;
+      let queryParams;
+
+      if (userRole === 'admin') {
+        // Admin can mark all notifications in the sector
+        updateQuery = 'UPDATE notification SET is_read = $1 WHERE near_rib = $2 RETURNING not_id, is_read, near_rib';
+        queryParams = [is_read, sector];
+      } else if (userRole === 'near_rib') {
+        // Near_rib users can mark their assigned notifications in their sector
+        updateQuery = 'UPDATE notification SET is_read = $1 WHERE near_rib = $2 AND assigned_user_id = $3 RETURNING not_id, is_read, near_rib';
+        queryParams = [is_read, sector, userId];
+      } else {
         return res.status(403).json({
           success: false,
-          message: 'Only admins can mark notifications by sector'
+          message: 'Only admins and near_rib users can mark notifications by sector'
         });
       }
 
-      // Update all notifications for the sector
-      const result = await pool.query(
-        'UPDATE notification SET is_read = $1, updated_at = CURRENT_TIMESTAMP WHERE near_rib = $2 RETURNING not_id, is_read, near_rib',
-        [is_read, sector]
-      );
+      // Update notifications for the sector - without updated_at column
+      const result = await pool.query(updateQuery, queryParams);
 
       res.json({
         success: true,
@@ -996,6 +1004,8 @@ class NotificationController {
           updated_notifications: result.rows,
           total_updated: result.rows.length,
           sector: sector,
+          user_id: userId,
+          user_role: userRole,
           new_status: is_read
         }
       });

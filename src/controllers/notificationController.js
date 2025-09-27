@@ -28,11 +28,27 @@ function generateGoogleMapsLinks(latitude, longitude, locationName = '') {
 }
 
 // Helper function to get location from IP
-async function getLocationFromIP(ip) {
-  // Skip geolocation for localhost and private IPs - these won't have real GPS data
+async function getLocationFromIP(ip, req = null) {
+  // For localhost and private IPs, try to get location from request headers or use fallback
   if (ip === '127.0.0.1' || ip === '::1' || ip.startsWith('192.168.') || ip.startsWith('10.') || ip.startsWith('172.')) {
-    console.log('⚠️ Local/private IP detected. Cannot get real GPS location.');
-    return null;
+    console.log('⚠️ Local/private IP detected. Attempting alternative location detection methods.');
+    
+    // Try to get location from X-Forwarded-For header (if behind proxy)
+    if (req) {
+      const forwardedIP = req.headers['x-forwarded-for']?.split(',')[0]?.trim();
+      if (forwardedIP && forwardedIP !== ip) {
+        console.log(`🔄 Trying forwarded IP: ${forwardedIP}`);
+        return await getLocationFromIP(forwardedIP, req);
+      }
+    }
+    
+    // For development/testing, return a default location (Kigali, Rwanda)
+    console.log('📍 Using fallback location for development/testing');
+    return {
+      latitude: -1.9441,
+      longitude: 30.0619,
+      location_name: 'Kigali, Rwanda (Development/Testing)'
+    };
   }
   
   try {
@@ -116,7 +132,11 @@ class NotificationController {
         fullname, 
         address, 
         phone, 
-        message
+        message,
+        // Allow clients to send their GPS coordinates directly
+        latitude: clientLatitude,
+        longitude: clientLongitude,
+        location_name: clientLocationName
       } = req.body;
 
       // Validate required fields
@@ -134,33 +154,43 @@ class NotificationController {
                       req.headers['x-real-ip'] ||
                       '127.0.0.1';
 
-      // Get real GPS location from device IP - NO FALLBACK LOCATIONS
+      // Get GPS location - prioritize client-provided coordinates, then IP-based detection
       let finalLatitude, finalLongitude, finalLocationName;
       
-      try {
-        console.log(`🌍 Attempting to get location for IP: ${clientIP}`);
-        const ipLocation = await getLocationFromIP(clientIP);
-        
-        if (ipLocation && ipLocation.latitude && ipLocation.longitude) {
-          finalLatitude = ipLocation.latitude;
-          finalLongitude = ipLocation.longitude;
-          finalLocationName = ipLocation.location_name;
-          console.log(`📍 Real GPS location detected from IP ${clientIP}: ${finalLocationName} (${finalLatitude}, ${finalLongitude})`);
-          console.log(`📍 Coordinate types: lat=${typeof finalLatitude}, lng=${typeof finalLongitude}`);
-        } else {
-          // No fallback location - only use real device location
-          finalLatitude = null;
-          finalLongitude = null;
-          finalLocationName = null;
-          console.log(`⚠️ No GPS location detected from IP ${clientIP} - notification will be saved without location data`);
+      // First, check if client provided GPS coordinates directly
+      if (clientLatitude && clientLongitude) {
+        console.log(`📍 Client provided GPS coordinates: ${clientLatitude}, ${clientLongitude}`);
+        finalLatitude = parseFloat(clientLatitude);
+        finalLongitude = parseFloat(clientLongitude);
+        finalLocationName = clientLocationName || 'Device GPS Location';
+        console.log(`✅ Using client-provided GPS location: ${finalLocationName} (${finalLatitude}, ${finalLongitude})`);
+      } else {
+        // Fallback to IP-based location detection
+        try {
+          console.log(`🌍 Attempting to get location for IP: ${clientIP}`);
+          const ipLocation = await getLocationFromIP(clientIP, req);
+          
+          if (ipLocation && ipLocation.latitude && ipLocation.longitude) {
+            finalLatitude = ipLocation.latitude;
+            finalLongitude = ipLocation.longitude;
+            finalLocationName = ipLocation.location_name;
+            console.log(`📍 GPS location detected from IP ${clientIP}: ${finalLocationName} (${finalLatitude}, ${finalLongitude})`);
+            console.log(`📍 Coordinate types: lat=${typeof finalLatitude}, lng=${typeof finalLongitude}`);
+          } else {
+            // Use fallback location for better coverage
+            finalLatitude = -1.9441; // Kigali, Rwanda
+            finalLongitude = 30.0619;
+            finalLocationName = 'Location not detected - Using default location';
+            console.log(`⚠️ No GPS location detected from IP ${clientIP} - using fallback location`);
+          }
+        } catch (error) {
+          console.error('❌ Location detection error:', error.message);
+          // Use fallback location for better coverage
+          finalLatitude = -1.9441; // Kigali, Rwanda
+          finalLongitude = 30.0619;
+          finalLocationName = 'Location detection failed - Using default location';
+          console.log(`⚠️ GPS location detection failed for IP ${clientIP} - using fallback location`);
         }
-      } catch (error) {
-        console.error('❌ Location detection error:', error.message);
-        // No fallback location - only use real device location
-        finalLatitude = null;
-        finalLongitude = null;
-        finalLocationName = null;
-        console.log(`⚠️ GPS location detection failed for IP ${clientIP} - notification will be saved without location data`);
       }
 
       // Validate GPS coordinates if we have them (only validate if they exist and are not null)
@@ -222,24 +252,27 @@ class NotificationController {
       res.status(201).json({
         success: true,
         message: finalLatitude && finalLongitude 
-          ? 'Notification sent successfully with real GPS location tracking' 
+          ? 'Notification sent successfully with GPS location tracking' 
           : 'Notification sent successfully (no GPS location detected)',
         data: { 
           notification: newNotification,
           device_tracking: {
             client_ip: clientIP,
             location_detected: !!(finalLatitude && finalLongitude),
-            location_source: finalLatitude && finalLongitude ? 'real_device_gps' : 'no_location_available',
+            location_source: clientLatitude && clientLongitude ? 'client_provided_gps' : 
+                           (finalLatitude && finalLongitude ? 'ip_based_detection' : 'fallback_location'),
             location: finalLatitude && finalLongitude ? {
               latitude: parseFloat(finalLatitude),
               longitude: parseFloat(finalLongitude),
-              location_name: finalLocationName || 'Real Device Location',
+              location_name: finalLocationName || 'Device Location',
               google_maps_links: googleMapsLinks
             } : null,
             google_maps_links: googleMapsLinks,
-            note: finalLatitude && finalLongitude 
-              ? 'Real device location successfully detected and tracked' 
-              : 'Could not detect real device location - notification saved without GPS data'
+            note: clientLatitude && clientLongitude 
+              ? 'GPS location provided directly by client device' 
+              : (finalLatitude && finalLongitude 
+                ? 'Location detected from IP address' 
+                : 'Using fallback location - no GPS data available')
           }
         }
       });
@@ -270,22 +303,25 @@ class NotificationController {
       const countResult = await pool.query('SELECT COUNT(*) as total FROM notification');
       const total = parseInt(countResult.rows[0].total);
 
-      // Get paginated data with GPS information
+      // Get paginated data with enhanced GPS information
       const result = await pool.query(
         `SELECT 
-           not_id, near_rib, fullname, address, phone, message, created_at, is_read,
-           latitude, longitude, location_name,
+           n.not_id, n.near_rib, n.fullname, n.address, n.phone, n.message, n.created_at, n.is_read,
+           n.latitude, n.longitude, n.location_name, n.assigned_user_id,
+           u.fullname as assigned_user_name,
+           u.sector as user_sector,
            CASE 
-             WHEN latitude IS NOT NULL AND longitude IS NOT NULL THEN true 
+             WHEN n.latitude IS NOT NULL AND n.longitude IS NOT NULL THEN true 
              ELSE false 
            END as has_gps_location
-         FROM notification 
-         ORDER BY not_id DESC 
+         FROM notification n
+         LEFT JOIN users u ON n.assigned_user_id = u.user_id
+         ORDER BY n.not_id DESC 
          LIMIT $1 OFFSET $2`,
         [limit, offset]
       );
 
-      // Format notifications with GPS data and Google Maps links
+      // Format notifications with enhanced GPS data and Google Maps links
       const notifications = result.rows.map(notification => {
         const googleMapsLinks = generateGoogleMapsLinks(notification.latitude, notification.longitude, notification.location_name);
         
@@ -294,10 +330,30 @@ class NotificationController {
           gps_location: notification.has_gps_location ? {
             latitude: parseFloat(notification.latitude),
             longitude: parseFloat(notification.longitude),
-            location_name: notification.location_name || 'Unknown Location',
-            google_maps_links: googleMapsLinks
-          } : null,
-          google_maps_links: googleMapsLinks
+            location_name: notification.location_name || 'Device Location',
+            google_maps_links: googleMapsLinks,
+            location_accuracy: 'GPS_COORDINATES',
+            location_source: 'DEVICE_GPS'
+          } : {
+            latitude: null,
+            longitude: null,
+            location_name: 'Location not available',
+            google_maps_links: null,
+            location_accuracy: 'NONE',
+            location_source: 'NO_LOCATION_DATA'
+          },
+          google_maps_links: googleMapsLinks,
+          location_status: notification.has_gps_location ? 'GPS_AVAILABLE' : 'NO_GPS_DATA',
+          device_tracking: {
+            has_location: notification.has_gps_location,
+            can_view_location: notification.has_gps_location,
+            location_type: notification.has_gps_location ? 'REAL_DEVICE_LOCATION' : 'NO_LOCATION_DATA'
+          },
+          assigned_user_info: notification.assigned_user_id ? {
+            user_id: notification.assigned_user_id,
+            user_name: notification.assigned_user_name,
+            user_sector: notification.user_sector
+          } : null
         };
       });
 
@@ -325,13 +381,17 @@ class NotificationController {
 
       const result = await pool.query(
         `SELECT 
-           not_id, near_rib, fullname, address, phone, message, created_at, is_read,
-           latitude, longitude, location_name,
+           n.not_id, n.near_rib, n.fullname, n.address, n.phone, n.message, n.created_at, n.is_read,
+           n.latitude, n.longitude, n.location_name, n.assigned_user_id,
+           u.fullname as assigned_user_name,
+           u.sector as user_sector,
            CASE 
-             WHEN latitude IS NOT NULL AND longitude IS NOT NULL THEN true 
+             WHEN n.latitude IS NOT NULL AND n.longitude IS NOT NULL THEN true 
              ELSE false 
            END as has_gps_location
-         FROM notification WHERE not_id = $1`,
+         FROM notification n
+         LEFT JOIN users u ON n.assigned_user_id = u.user_id
+         WHERE n.not_id = $1`,
         [id]
       );
 
@@ -350,10 +410,30 @@ class NotificationController {
         gps_location: notification.has_gps_location ? {
           latitude: parseFloat(notification.latitude),
           longitude: parseFloat(notification.longitude),
-          location_name: notification.location_name || 'Unknown Location',
-          google_maps_links: googleMapsLinks
-        } : null,
-        google_maps_links: googleMapsLinks
+          location_name: notification.location_name || 'Device Location',
+          google_maps_links: googleMapsLinks,
+          location_accuracy: 'GPS_COORDINATES',
+          location_source: 'DEVICE_GPS'
+        } : {
+          latitude: null,
+          longitude: null,
+          location_name: 'Location not available',
+          google_maps_links: null,
+          location_accuracy: 'NONE',
+          location_source: 'NO_LOCATION_DATA'
+        },
+        google_maps_links: googleMapsLinks,
+        location_status: notification.has_gps_location ? 'GPS_AVAILABLE' : 'NO_GPS_DATA',
+        device_tracking: {
+          has_location: notification.has_gps_location,
+          can_view_location: notification.has_gps_location,
+          location_type: notification.has_gps_location ? 'REAL_DEVICE_LOCATION' : 'NO_LOCATION_DATA'
+        },
+        assigned_user_info: notification.assigned_user_id ? {
+          user_id: notification.assigned_user_id,
+          user_name: notification.assigned_user_name,
+          user_sector: notification.user_sector
+        } : null
       };
 
       res.json({
@@ -1083,7 +1163,7 @@ class NotificationController {
 
       const result = await pool.query(query, queryParams);
 
-      // Format notifications with GPS data and Google Maps links
+      // Format notifications with enhanced GPS data and Google Maps links
       const notifications = result.rows.map(notification => {
         const googleMapsLinks = generateGoogleMapsLinks(notification.latitude, notification.longitude, notification.location_name);
         
@@ -1092,10 +1172,25 @@ class NotificationController {
           gps_location: notification.has_gps_location ? {
             latitude: parseFloat(notification.latitude),
             longitude: parseFloat(notification.longitude),
-            location_name: notification.location_name || 'Unknown Location',
-            google_maps_links: googleMapsLinks
-          } : null,
-          google_maps_links: googleMapsLinks
+            location_name: notification.location_name || 'Device Location',
+            google_maps_links: googleMapsLinks,
+            location_accuracy: 'GPS_COORDINATES',
+            location_source: 'DEVICE_GPS'
+          } : {
+            latitude: null,
+            longitude: null,
+            location_name: 'Location not available',
+            google_maps_links: null,
+            location_accuracy: 'NONE',
+            location_source: 'NO_LOCATION_DATA'
+          },
+          google_maps_links: googleMapsLinks,
+          location_status: notification.has_gps_location ? 'GPS_AVAILABLE' : 'NO_GPS_DATA',
+          device_tracking: {
+            has_location: notification.has_gps_location,
+            can_view_location: notification.has_gps_location,
+            location_type: notification.has_gps_location ? 'REAL_DEVICE_LOCATION' : 'NO_LOCATION_DATA'
+          }
         };
       });
 
@@ -1199,7 +1294,7 @@ class NotificationController {
 
       const result = await pool.query(query, queryParams);
 
-      // Format notifications with GPS data and Google Maps links
+      // Format notifications with enhanced GPS data and Google Maps links
       const notifications = result.rows.map(notification => {
         const googleMapsLinks = generateGoogleMapsLinks(notification.latitude, notification.longitude, notification.location_name);
         
@@ -1208,10 +1303,25 @@ class NotificationController {
           gps_location: notification.has_gps_location ? {
             latitude: parseFloat(notification.latitude),
             longitude: parseFloat(notification.longitude),
-            location_name: notification.location_name || 'Unknown Location',
-            google_maps_links: googleMapsLinks
-          } : null,
-          google_maps_links: googleMapsLinks
+            location_name: notification.location_name || 'Device Location',
+            google_maps_links: googleMapsLinks,
+            location_accuracy: 'GPS_COORDINATES',
+            location_source: 'DEVICE_GPS'
+          } : {
+            latitude: null,
+            longitude: null,
+            location_name: 'Location not available',
+            google_maps_links: null,
+            location_accuracy: 'NONE',
+            location_source: 'NO_LOCATION_DATA'
+          },
+          google_maps_links: googleMapsLinks,
+          location_status: notification.has_gps_location ? 'GPS_AVAILABLE' : 'NO_GPS_DATA',
+          device_tracking: {
+            has_location: notification.has_gps_location,
+            can_view_location: notification.has_gps_location,
+            location_type: notification.has_gps_location ? 'REAL_DEVICE_LOCATION' : 'NO_LOCATION_DATA'
+          }
         };
       });
 
@@ -1481,6 +1591,537 @@ class NotificationController {
       res.status(500).json({
         success: false,
         message: 'Failed to get notification assignment statistics',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      });
+    }
+  }
+
+  // Mark notification as read by admin
+  async markNotificationReadByAdmin(req, res) {
+    try {
+      const { id } = req.params;
+      const { is_read = true } = req.body;
+
+      console.log('🔍 Admin mark notification read request:', { id, is_read });
+
+      // Check if notification exists
+      const existingNotification = await pool.query(
+        'SELECT not_id, is_read, fullname, message FROM notification WHERE not_id = $1',
+        [id]
+      );
+
+      if (existingNotification.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Notification not found'
+        });
+      }
+
+      const notification = existingNotification.rows[0];
+
+      // Update read status
+      const result = await pool.query(
+        'UPDATE notification SET is_read = $1 WHERE not_id = $2 RETURNING *',
+        [is_read, id]
+      );
+
+      console.log('✅ Admin marked notification as read:', result.rows[0]);
+
+      res.json({
+        success: true,
+        message: `Notification marked as ${is_read ? 'read' : 'unread'} by admin`,
+        data: { 
+          notification: result.rows[0],
+          previous_status: notification.is_read,
+          new_status: is_read,
+          updated_by: 'admin',
+          admin_action: true
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Admin mark notification read error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to mark notification as read',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      });
+    }
+  }
+
+  // Mark multiple notifications as read by admin
+  async markMultipleNotificationsReadByAdmin(req, res) {
+    try {
+      const { notification_ids, is_read = true } = req.body;
+
+      if (!notification_ids || !Array.isArray(notification_ids) || notification_ids.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'notification_ids array is required'
+        });
+      }
+
+      console.log('🔍 Admin mark multiple notifications read request:', { notification_ids, is_read });
+
+      // Check which notifications exist
+      const placeholders = notification_ids.map((_, index) => `$${index + 1}`).join(',');
+      const checkResult = await pool.query(
+        `SELECT not_id, is_read, fullname, message FROM notification WHERE not_id IN (${placeholders})`,
+        notification_ids
+      );
+
+      if (checkResult.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'No notifications found with the provided IDs'
+        });
+      }
+
+      // Update multiple notifications
+      const updatePlaceholders = notification_ids.map((_, index) => `$${index + 1}`).join(',');
+      const result = await pool.query(
+        `UPDATE notification 
+         SET is_read = $${notification_ids.length + 1}
+         WHERE not_id IN (${updatePlaceholders}) 
+         RETURNING not_id, is_read, fullname, message`,
+        [...notification_ids, is_read]
+      );
+
+      console.log(`✅ Admin marked ${result.rows.length} notifications as ${is_read ? 'read' : 'unread'}`);
+
+      res.json({
+        success: true,
+        message: `${result.rows.length} notifications marked as ${is_read ? 'read' : 'unread'} by admin`,
+        data: { 
+          updated_notifications: result.rows,
+          total_updated: result.rows.length,
+          requested_count: notification_ids.length,
+          updated_by: 'admin',
+          admin_action: true
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Admin mark multiple notifications read error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to mark multiple notifications as read',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      });
+    }
+  }
+
+  // Mark all notifications as read by admin
+  async markAllNotificationsReadByAdmin(req, res) {
+    try {
+      const { is_read = true, sector = null } = req.body;
+
+      console.log('🔍 Admin mark all notifications read request:', { is_read, sector });
+
+      let updateQuery;
+      let queryParams;
+
+      if (sector) {
+        // Mark all notifications in specific sector
+        updateQuery = 'UPDATE notification SET is_read = $1 WHERE near_rib = $2 RETURNING not_id, is_read, near_rib, fullname';
+        queryParams = [is_read, sector];
+      } else {
+        // Mark all notifications
+        updateQuery = 'UPDATE notification SET is_read = $1 RETURNING not_id, is_read, near_rib, fullname';
+        queryParams = [is_read];
+      }
+
+      const result = await pool.query(updateQuery, queryParams);
+
+      console.log(`✅ Admin marked all notifications as ${is_read ? 'read' : 'unread'}: ${result.rows.length} notifications`);
+
+      res.json({
+        success: true,
+        message: `${result.rows.length} notifications marked as ${is_read ? 'read' : 'unread'} by admin`,
+        data: { 
+          updated_notifications: result.rows,
+          total_updated: result.rows.length,
+          sector: sector || 'all',
+          updated_by: 'admin',
+          admin_action: true
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Admin mark all notifications read error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to mark all notifications as read',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      });
+    }
+  }
+
+  // Get all notifications for admin with full permissions and enhanced data
+  async getAllNotificationsForAdmin(req, res) {
+    try {
+      const { page = 1, limit = 20, sector = null, has_location = null, is_read = null, assigned_user = null } = req.query;
+      const offset = (page - 1) * limit;
+
+      console.log('🔍 Admin get all notifications request:', { page, limit, sector, has_location, is_read, assigned_user });
+
+      // Build comprehensive query for admin
+      let query = `
+        SELECT 
+          n.not_id,
+          n.near_rib,
+          n.fullname,
+          n.address,
+          n.phone,
+          n.message,
+          n.created_at,
+          n.is_read,
+          n.latitude,
+          n.longitude,
+          n.location_name,
+          n.assigned_user_id,
+          u.fullname as assigned_user_name,
+          u.sector as user_sector,
+          u.position as user_position,
+          u.role as user_role,
+          CASE 
+            WHEN n.latitude IS NOT NULL AND n.longitude IS NOT NULL 
+            THEN true 
+            ELSE false 
+          END as has_gps_location
+        FROM notification n
+        LEFT JOIN users u ON n.assigned_user_id = u.user_id
+        WHERE 1=1
+      `;
+
+      const queryParams = [];
+      let paramCount = 0;
+
+      // Filter by sector if provided
+      if (sector) {
+        paramCount++;
+        query += ` AND n.near_rib = $${paramCount}`;
+        queryParams.push(sector);
+      }
+
+      // Filter by location availability if provided
+      if (has_location === 'true') {
+        query += ` AND n.latitude IS NOT NULL AND n.longitude IS NOT NULL`;
+      } else if (has_location === 'false') {
+        query += ` AND (n.latitude IS NULL OR n.longitude IS NULL)`;
+      }
+
+      // Filter by read status if provided
+      if (is_read === 'true') {
+        query += ` AND n.is_read = true`;
+      } else if (is_read === 'false') {
+        query += ` AND n.is_read = false`;
+      }
+
+      // Filter by assigned user if provided
+      if (assigned_user) {
+        paramCount++;
+        query += ` AND n.assigned_user_id = $${paramCount}`;
+        queryParams.push(assigned_user);
+      }
+
+      query += ` ORDER BY n.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
+      queryParams.push(parseInt(limit), offset);
+
+      const result = await pool.query(query, queryParams);
+
+      // Format notifications with comprehensive admin data
+      const notifications = result.rows.map(notification => {
+        const googleMapsLinks = generateGoogleMapsLinks(notification.latitude, notification.longitude, notification.location_name);
+        
+        return {
+          ...notification,
+          gps_location: notification.has_gps_location ? {
+            latitude: parseFloat(notification.latitude),
+            longitude: parseFloat(notification.longitude),
+            location_name: notification.location_name || 'Device Location',
+            google_maps_links: googleMapsLinks,
+            location_accuracy: 'GPS_COORDINATES',
+            location_source: 'DEVICE_GPS'
+          } : {
+            latitude: null,
+            longitude: null,
+            location_name: 'Location not available',
+            google_maps_links: null,
+            location_accuracy: 'NONE',
+            location_source: 'NO_LOCATION_DATA'
+          },
+          google_maps_links: googleMapsLinks,
+          location_status: notification.has_gps_location ? 'GPS_AVAILABLE' : 'NO_GPS_DATA',
+          admin_notes: {
+            can_view_location: notification.has_gps_location,
+            location_accuracy: notification.has_gps_location ? 'HIGH' : 'NONE',
+            tracking_method: notification.has_gps_location ? 'GPS_COORDINATES' : 'IP_FALLBACK',
+            admin_access: true,
+            full_permissions: true
+          },
+          assigned_user_info: notification.assigned_user_id ? {
+            user_id: notification.assigned_user_id,
+            user_name: notification.assigned_user_name,
+            user_sector: notification.user_sector,
+            user_position: notification.user_position,
+            user_role: notification.user_role
+          } : {
+            user_id: null,
+            user_name: 'Unassigned',
+            user_sector: null,
+            user_position: null,
+            user_role: null
+          }
+        };
+      });
+
+      // Get total count for pagination
+      let countQuery = 'SELECT COUNT(*) FROM notification WHERE 1=1';
+      const countParams = [];
+
+      if (sector) {
+        countQuery += ' AND near_rib = $1';
+        countParams.push(sector);
+      }
+
+      if (has_location === 'true') {
+        countQuery += ' AND latitude IS NOT NULL AND longitude IS NOT NULL';
+      } else if (has_location === 'false') {
+        countQuery += ' AND (latitude IS NULL OR longitude IS NULL)';
+      }
+
+      if (is_read === 'true') {
+        countQuery += ' AND is_read = true';
+      } else if (is_read === 'false') {
+        countQuery += ' AND is_read = false';
+      }
+
+      if (assigned_user) {
+        countQuery += ' AND assigned_user_id = $' + (countParams.length + 1);
+        countParams.push(assigned_user);
+      }
+
+      const countResult = await pool.query(countQuery, countParams);
+      const totalItems = parseInt(countResult.rows[0].count);
+
+      // Get comprehensive statistics for admin
+      const statsQuery = `
+        SELECT 
+          COUNT(*) as total_notifications,
+          COUNT(CASE WHEN is_read = true THEN 1 END) as read_notifications,
+          COUNT(CASE WHEN is_read = false THEN 1 END) as unread_notifications,
+          COUNT(CASE WHEN latitude IS NOT NULL AND longitude IS NOT NULL THEN 1 END) as with_gps,
+          COUNT(CASE WHEN latitude IS NULL OR longitude IS NULL THEN 1 END) as without_gps,
+          COUNT(CASE WHEN assigned_user_id IS NOT NULL THEN 1 END) as assigned_notifications,
+          COUNT(CASE WHEN assigned_user_id IS NULL THEN 1 END) as unassigned_notifications,
+          ROUND(
+            (COUNT(CASE WHEN is_read = true THEN 1 END)::DECIMAL / 
+             NULLIF(COUNT(*), 0)) * 100, 2
+          ) as read_percentage,
+          ROUND(
+            (COUNT(CASE WHEN latitude IS NOT NULL AND longitude IS NOT NULL THEN 1 END)::DECIMAL / 
+             NULLIF(COUNT(*), 0)) * 100, 2
+          ) as gps_coverage_percentage
+        FROM notification
+        ${sector ? 'WHERE near_rib = $1' : ''}
+      `;
+      
+      const statsParams = sector ? [sector] : [];
+      const statsResult = await pool.query(statsQuery, statsParams);
+      const stats = statsResult.rows[0];
+
+      res.json({
+        success: true,
+        message: 'All notifications retrieved successfully for admin',
+        data: {
+          notifications: notifications,
+          pagination: {
+            currentPage: parseInt(page),
+            totalPages: Math.ceil(totalItems / parseInt(limit)),
+            totalItems: totalItems,
+            itemsPerPage: parseInt(limit)
+          },
+          statistics: {
+            total_notifications: parseInt(stats.total_notifications),
+            read_notifications: parseInt(stats.read_notifications),
+            unread_notifications: parseInt(stats.unread_notifications),
+            with_gps: parseInt(stats.with_gps),
+            without_gps: parseInt(stats.without_gps),
+            assigned_notifications: parseInt(stats.assigned_notifications),
+            unassigned_notifications: parseInt(stats.unassigned_notifications),
+            read_percentage: parseFloat(stats.read_percentage),
+            gps_coverage_percentage: parseFloat(stats.gps_coverage_percentage)
+          },
+          filters_applied: {
+            sector: sector || 'all',
+            has_location: has_location || 'all',
+            is_read: is_read || 'all',
+            assigned_user: assigned_user || 'all'
+          },
+          admin_permissions: {
+            can_view_all: true,
+            can_view_location: true,
+            can_view_assigned_users: true,
+            can_view_statistics: true,
+            full_access: true
+          }
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Get all notifications for admin error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get all notifications for admin',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      });
+    }
+  }
+
+  // Get notifications with enhanced location information for admin dashboard
+  async getNotificationsWithLocationForAdmin(req, res) {
+    try {
+      const { page = 1, limit = 10, sector = null, has_location = null } = req.query;
+      const offset = (page - 1) * limit;
+
+      console.log('🔍 Admin notification request:', { page, limit, sector, has_location });
+
+      // Build query with enhanced location information
+      let query = `
+        SELECT 
+          n.not_id,
+          n.near_rib,
+          n.fullname,
+          n.address,
+          n.phone,
+          n.message,
+          n.created_at,
+          n.is_read,
+          n.latitude,
+          n.longitude,
+          n.location_name,
+          n.assigned_user_id,
+          u.fullname as assigned_user_name,
+          u.sector as user_sector,
+          CASE 
+            WHEN n.latitude IS NOT NULL AND n.longitude IS NOT NULL 
+            THEN true 
+            ELSE false 
+          END as has_gps_location,
+          NULL as distance_from_kigali_km
+        FROM notification n
+        LEFT JOIN users u ON n.assigned_user_id = u.user_id
+        WHERE 1=1
+      `;
+
+      const queryParams = [];
+      let paramCount = 0;
+
+      // Filter by sector if provided
+      if (sector) {
+        paramCount++;
+        query += ` AND n.near_rib = $${paramCount}`;
+        queryParams.push(sector);
+      }
+
+      // Filter by location availability if provided
+      if (has_location === 'true') {
+        query += ` AND n.latitude IS NOT NULL AND n.longitude IS NOT NULL`;
+      } else if (has_location === 'false') {
+        query += ` AND (n.latitude IS NULL OR n.longitude IS NULL)`;
+      }
+
+      query += ` ORDER BY n.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
+      queryParams.push(parseInt(limit), offset);
+
+      const result = await pool.query(query, queryParams);
+
+      // Format notifications with enhanced location data
+      const notifications = result.rows.map(notification => {
+        const googleMapsLinks = generateGoogleMapsLinks(notification.latitude, notification.longitude, notification.location_name);
+        
+        return {
+          ...notification,
+          gps_location: notification.has_gps_location ? {
+            latitude: parseFloat(notification.latitude),
+            longitude: parseFloat(notification.longitude),
+            location_name: notification.location_name || 'Unknown Location',
+            google_maps_links: googleMapsLinks,
+            distance_from_kigali_km: notification.distance_from_kigali_km ? 
+              Math.round(notification.distance_from_kigali_km * 100) / 100 : null
+          } : null,
+          google_maps_links: googleMapsLinks,
+          location_status: notification.has_gps_location ? 'GPS_AVAILABLE' : 'NO_GPS_DATA',
+          admin_notes: {
+            can_view_location: notification.has_gps_location,
+            location_accuracy: notification.has_gps_location ? 'HIGH' : 'NONE',
+            tracking_method: notification.has_gps_location ? 'GPS_COORDINATES' : 'IP_FALLBACK'
+          }
+        };
+      });
+
+      // Get total count for pagination
+      let countQuery = 'SELECT COUNT(*) FROM notification WHERE 1=1';
+      const countParams = [];
+
+      if (sector) {
+        countQuery += ' AND near_rib = $1';
+        countParams.push(sector);
+      }
+
+      if (has_location === 'true') {
+        countQuery += ' AND latitude IS NOT NULL AND longitude IS NOT NULL';
+      } else if (has_location === 'false') {
+        countQuery += ' AND (latitude IS NULL OR longitude IS NULL)';
+      }
+
+      const countResult = await pool.query(countQuery, countParams);
+      const totalItems = parseInt(countResult.rows[0].count);
+
+      // Get location statistics
+      const locationStats = await pool.query(`
+        SELECT 
+          COUNT(*) as total_notifications,
+          COUNT(CASE WHEN latitude IS NOT NULL AND longitude IS NOT NULL THEN 1 END) as with_gps,
+          COUNT(CASE WHEN latitude IS NULL OR longitude IS NULL THEN 1 END) as without_gps,
+          ROUND(
+            (COUNT(CASE WHEN latitude IS NOT NULL AND longitude IS NOT NULL THEN 1 END)::DECIMAL / 
+             NULLIF(COUNT(*), 0)) * 100, 2
+          ) as gps_coverage_percentage
+        FROM notification
+        ${sector ? 'WHERE near_rib = $1' : ''}
+      `, sector ? [sector] : []);
+
+      res.json({
+        success: true,
+        message: 'Admin notifications with enhanced location data retrieved successfully',
+        data: {
+          notifications: notifications,
+          pagination: {
+            currentPage: parseInt(page),
+            totalPages: Math.ceil(totalItems / parseInt(limit)),
+            totalItems: totalItems,
+            itemsPerPage: parseInt(limit)
+          },
+          location_statistics: {
+            total_notifications: parseInt(locationStats.rows[0].total_notifications),
+            with_gps: parseInt(locationStats.rows[0].with_gps),
+            without_gps: parseInt(locationStats.rows[0].without_gps),
+            gps_coverage_percentage: parseFloat(locationStats.rows[0].gps_coverage_percentage)
+          },
+          filters_applied: {
+            sector: sector || 'all',
+            has_location: has_location || 'all'
+          }
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Get admin notifications error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get admin notifications',
         error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
       });
     }

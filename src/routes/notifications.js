@@ -27,7 +27,14 @@ router.get('/location', notificationController.getNotificationsByLocation);
 router.get('/map', notificationController.getNotificationsForMap);
 router.get('/gps-statistics', notificationController.getNotificationGPSStatistics);
 router.get('/stats/rib-statistics', notificationController.getRibStatistics);
+router.get('/admin/location-enhanced', notificationController.getNotificationsWithLocationForAdmin);
+router.get('/admin/all', notificationController.getAllNotificationsForAdmin);
 router.get('/:id', notificationController.getNotificationById);
+
+// Admin routes for marking notifications as read
+router.patch('/admin/:id/read', notificationController.markNotificationReadByAdmin);
+router.patch('/admin/mark-multiple-read', notificationController.markMultipleNotificationsReadByAdmin);
+router.patch('/admin/mark-all-read', notificationController.markAllNotificationsReadByAdmin);
 
 // Protected routes (require authentication)
 router.put('/:id', auth, notificationController.updateNotification);

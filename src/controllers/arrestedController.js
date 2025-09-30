@@ -62,6 +62,12 @@ const createArrested = async (req, res) => {
             // File is already saved by multer, just generate the URL
             finalImageUrl = `/uploads/arrested/images/${req.file.filename}`;
             console.log(`📸 Image uploaded successfully: ${finalImageUrl}`);
+            console.log(`📸 File details:`, {
+                originalname: req.file.originalname,
+                filename: req.file.filename,
+                mimetype: req.file.mimetype,
+                size: req.file.size
+            });
         } else if (image_url) {
             // Use provided image_url for JSON requests
             finalImageUrl = image_url;
@@ -234,9 +240,18 @@ const updateArrested = async (req, res) => {
             }
         }
 
-        // Handle image upload if provided (placeholder for now)
+        // Handle image upload if provided
         if (req.file) {
-            console.log('Image upload attempted but not configured yet');
+            // File is already saved by multer, generate the URL
+            const imageUrl = `/uploads/arrested/images/${req.file.filename}`;
+            updateData.image_url = imageUrl;
+            console.log(`📸 Image updated successfully: ${imageUrl}`);
+            console.log(`📸 File details:`, {
+                originalname: req.file.originalname,
+                filename: req.file.filename,
+                mimetype: req.file.mimetype,
+                size: req.file.size
+            });
         }
 
         // Remove fields that shouldn't be updated
@@ -303,9 +318,23 @@ const deleteArrested = async (req, res) => {
             });
         }
 
-        // TODO: Handle image deletion if image_url exists
+        // Handle image deletion if image_url exists
         if (arrested.image_url) {
-            console.log('Image deletion needed but not configured yet');
+            try {
+                // Extract filename from image_url
+                const filename = arrested.image_url.replace('/uploads/arrested/images/', '');
+                const filePath = path.join(process.cwd(), 'uploads', 'arrested', 'images', filename);
+                
+                if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                    console.log(`🗑️ Deleted image file: ${filePath}`);
+                } else {
+                    console.log(`⚠️ Image file not found on disk: ${filePath}`);
+                }
+            } catch (error) {
+                console.error('Error deleting image file:', error);
+                // Don't fail the deletion if image file deletion fails
+            }
         }
 
         await Arrested.delete(parseInt(id));

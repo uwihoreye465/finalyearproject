@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arrested Image Upload Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .info {
+            background-color: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+        .image-preview {
+            max-width: 200px;
+            max-height: 200px;
+            margin-top: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .token-input {
+            background-color: #fff3cd;
+            border-color: #ffeaa7;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚔 Arrested Image Upload Test</h1>
+        
+        <div class="form-group">
+            <label for="token">Authorization Token:</label>
+            <input type="text" id="token" placeholder="Enter your JWT token here" class="token-input">
+            <small style="color: #666;">You need a valid JWT token to test the API</small>
+        </div>
+
+        <form id="arrestForm">
+            <div class="form-group">
+                <label for="fullname">Full Name:</label>
+                <input type="text" id="fullname" name="fullname" value="John Doe Test" required>
+            </div>
+
+            <div class="form-group">
+                <label for="crime_type">Crime Type:</label>
+                <input type="text" id="crime_type" name="crime_type" value="Theft" required>
+            </div>
+
+            <div class="form-group">
+                <label for="date_arrested">Date Arrested:</label>
+                <input type="date" id="date_arrested" name="date_arrested" value="2024-01-15">
+            </div>
+
+            <div class="form-group">
+                <label for="arrest_location">Arrest Location:</label>
+                <input type="text" id="arrest_location" name="arrest_location" value="Kigali, Rwanda">
+            </div>
+
+            <div class="form-group">
+                <label for="id_type">ID Type:</label>
+                <select id="id_type" name="id_type">
+                    <option value="indangamuntu_yumunyarwanda">Indangamuntu y'umunyarwanda</option>
+                    <option value="indangamuntu_yumunyamahanga">Indangamuntu y'umunyamahanga</option>
+                    <option value="indangampunzi">Indangampunzi</option>
+                    <option value="passport">Passport</option>
+                    <option value="unknown">Unknown</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="id_number">ID Number:</label>
+                <input type="text" id="id_number" name="id_number" value="1234567890123456">
+            </div>
+
+            <div class="form-group">
+                <label for="image">Image:</label>
+                <input type="file" id="image" name="image" accept="image/*">
+                <div id="imagePreview"></div>
+            </div>
+
+            <button type="button" onclick="createArrested()">Create Arrested Record</button>
+            <button type="button" onclick="createWithoutImage()">Create Without Image (JSON)</button>
+            <button type="button" onclick="testDownload()">Test Image Download</button>
+            <button type="button" onclick="clearResults()">Clear Results</button>
+        </form>
+
+        <div id="result"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3000/api/v1/arrested';
+        let lastArrestId = null;
+
+        // Image preview
+        document.getElementById('image').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            const preview = document.getElementById('imagePreview');
+            
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    preview.innerHTML = `<img src="${e.target.result}" class="image-preview" alt="Preview">`;
+                };
+                reader.readAsDataURL(file);
+            } else {
+                preview.innerHTML = '';
+            }
+        });
+
+        function showResult(message, type = 'info') {
+            const resultDiv = document.getElementById('result');
+            resultDiv.className = `result ${type}`;
+            resultDiv.textContent = message;
+        }
+
+        function clearResults() {
+            document.getElementById('result').innerHTML = '';
+        }
+
+        function getToken() {
+            const token = document.getElementById('token').value.trim();
+            if (!token) {
+                showResult('Please enter a valid JWT token first!', 'error');
+                return null;
+            }
+            return token;
+        }
+
+        async function createArrested() {
+            const token = getToken();
+            if (!token) return;
+
+            const formData = new FormData();
+            const imageFile = document.getElementById('image').files[0];
+            
+            if (!imageFile) {
+                showResult('Please select an image file!', 'error');
+                return;
+            }
+
+            // Add form data
+            formData.append('fullname', document.getElementById('fullname').value);
+            formData.append('crime_type', document.getElementById('crime_type').value);
+            formData.append('date_arrested', document.getElementById('date_arrested').value);
+            formData.append('arrest_location', document.getElementById('arrest_location').value);
+            formData.append('id_type', document.getElementById('id_type').value);
+            formData.append('id_number', document.getElementById('id_number').value);
+            formData.append('image', imageFile);
+
+            try {
+                showResult('Creating arrested record with image...', 'info');
+                
+                const response = await fetch(API_BASE, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: formData
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    lastArrestId = result.data.arrest_id;
+                    showResult(`✅ Success! Arrested record created with ID: ${lastArrestId}\nImage URL: ${result.data.image_url || 'No image URL'}`, 'success');
+                } else {
+                    showResult(`❌ Error: ${result.message}`, 'error');
+                }
+            } catch (error) {
+                showResult(`❌ Network Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function createWithoutImage() {
+            const token = getToken();
+            if (!token) return;
+
+            const data = {
+                fullname: document.getElementById('fullname').value,
+                crime_type: document.getElementById('crime_type').value,
+                date_arrested: document.getElementById('date_arrested').value,
+                arrest_location: document.getElementById('arrest_location').value,
+                id_type: document.getElementById('id_type').value,
+                id_number: document.getElementById('id_number').value
+            };
+
+            try {
+                showResult('Creating arrested record without image (JSON)...', 'info');
+                
+                const response = await fetch(API_BASE, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    lastArrestId = result.data.arrest_id;
+                    showResult(`✅ Success! Arrested record created with ID: ${lastArrestId}\nImage URL: ${result.data.image_url || 'No image URL'}`, 'success');
+                } else {
+                    showResult(`❌ Error: ${result.message}`, 'error');
+                }
+            } catch (error) {
+                showResult(`❌ Network Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function testDownload() {
+            const token = getToken();
+            if (!token) return;
+
+            if (!lastArrestId) {
+                showResult('Please create an arrested record first!', 'error');
+                return;
+            }
+
+            try {
+                showResult('Testing image download...', 'info');
+                
+                const response = await fetch(`${API_BASE}/${lastArrestId}/download/image`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `arrested_image_${lastArrestId}.jpg`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    
+                    showResult(`✅ Image download successful! File size: ${blob.size} bytes`, 'success');
+                } else {
+                    const error = await response.json();
+                    showResult(`❌ Download Error: ${error.message}`, 'error');
+                }
+            } catch (error) {
+                showResult(`❌ Network Error: ${error.message}`, 'error');
+            }
+        }
+
+        // Auto-fill current date
+        document.getElementById('date_arrested').value = new Date().toISOString().split('T')[0];
+    </script>
+</body>
+</html>

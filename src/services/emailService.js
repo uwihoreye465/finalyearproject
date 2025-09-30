@@ -17,10 +17,10 @@ class EmailService {
         const mailOptions = {
             from: process.env.EMAIL_USER,
             to: email,
-            subject: 'Welcome to FindSinners System',
+            subject: 'Welcome to Online Tracking criminal System',
             html: `
                 <h1>Welcome ${name}!</h1>
-                <p>Thank you for registering with FindSinners System.</p>
+                <p>Thank you for registering with Online Tracking criminal System.</p>
                 <p>Your account has been successfully created.</p>
             `
         };
@@ -41,7 +41,7 @@ class EmailService {
         const mailOptions = {
             from: process.env.EMAIL_USER,
             to: email,
-            subject: 'Password Reset Request - FindSinners System',
+            subject: 'Password Reset Request - Online Tracking criminal Syste',
             html: `
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                     <h2 style="color: #333;">Password Reset Request</h2>
@@ -96,7 +96,7 @@ class EmailService {
                     </div>
                     <p><strong>This link will expire in 24 hours.</strong></p>
                     <hr style="margin: 30px 0;">
-                    <p style="color: #666; font-size: 14px;">Best regards,<br>FindSinners System Team</p>
+                    <p style="color: #666; font-size: 14px;">Best regards,<br>Online Tracking criminal System Team</p>
                 </div>
             `
         };
@@ -121,7 +121,7 @@ class EmailService {
         const mailOptions = {
             from: process.env.EMAIL_USER,
             to: email,
-            subject: 'Password Changed - FindSinners System',
+            subject: 'Password Changed - Online Tracking criminal System',
             html: `
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                     <h2 style="color: #333;">Password Changed Successfully</h2>

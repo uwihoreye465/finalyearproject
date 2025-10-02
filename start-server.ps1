@@ -1,37 +1,43 @@
-# FindSinnerSystem API Server Startup Script
-# This script automatically kills any existing server processes and starts the server
-
-Write-Host "🔍 Checking for existing server processes on port 6000..." -ForegroundColor Yellow
+# PowerShell script to start FindSinnerSystem server
+Write-Host "🔧 FIXING PORT 6000 ISSUE..." -ForegroundColor Yellow
+Write-Host ""
 
 # Check if port 6000 is in use
-$portInUse = Get-NetTCPConnection -LocalPort 6000 -ErrorAction SilentlyContinue
+Write-Host "🔍 Checking if port 6000 is in use..." -ForegroundColor Cyan
+$portCheck = netstat -ano | findstr :6000
 
-if ($portInUse) {
-    Write-Host "⚠️  Port 6000 is already in use. Killing existing processes..." -ForegroundColor Red
+if ($portCheck) {
+    Write-Host "⚠️  Port 6000 is currently in use!" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "🛑 Killing all processes using port 6000..." -ForegroundColor Yellow
     
-    # Get processes using port 6000
-    $processes = Get-NetTCPConnection -LocalPort 6000 | Select-Object -ExpandProperty OwningProcess
-    
-    foreach ($pid in $processes) {
-        try {
-            $process = Get-Process -Id $pid -ErrorAction SilentlyContinue
-            if ($process) {
-                Write-Host "🗑️  Killing process $pid ($($process.ProcessName))..." -ForegroundColor Red
-                Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
-            }
-        }
-        catch {
-            Write-Host "⚠️  Could not kill process $pid" -ForegroundColor Yellow
+    # Kill all processes using port 6000
+    $processes = netstat -ano | findstr :6000 | ForEach-Object {
+        $parts = $_ -split '\s+'
+        $pid = $parts[-1]
+        if ($pid -match '^\d+$') {
+            Write-Host "  Killing process $pid..." -ForegroundColor Yellow
+            taskkill /PID $pid /F 2>$null
         }
     }
     
-    # Wait a moment for processes to be killed
-    Start-Sleep -Seconds 2
-    
-    Write-Host "✅ Port 6000 is now free." -ForegroundColor Green
+    Write-Host "✅ All processes killed!" -ForegroundColor Green
+    Write-Host ""
+    Start-Sleep 2
 } else {
-    Write-Host "✅ Port 6000 is available." -ForegroundColor Green
+    Write-Host "✅ Port 6000 is free!" -ForegroundColor Green
+    Write-Host ""
 }
 
-Write-Host "🚀 Starting FindSinnerSystem API server..." -ForegroundColor Cyan
-npm start
+# Change to the correct directory
+Set-Location "C:\Users\uwiho\Desktop\BACKENDFRONTEND\findsinnerssystem"
+
+Write-Host "🚀 Starting FindSinnerSystem server..." -ForegroundColor Green
+Write-Host ""
+
+# Start the server
+node server.js
+
+Write-Host ""
+Write-Host "🎉 Server startup complete!" -ForegroundColor Green
+Read-Host "Press Enter to continue"

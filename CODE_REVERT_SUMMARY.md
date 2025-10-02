@@ -9,7 +9,7 @@
 ## 📁 **Current Clean State:**
 
 Your project now contains only the essential files:
-- ✅ Core application files (`app.js`, `server.js`)
+- ✅ Core application files (`app.js`, `server`).js
 - ✅ Source code in `src/` directory
 - ✅ Original documentation files
 - ✅ Test files

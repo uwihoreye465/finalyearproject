@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Verification Test - FindSinners System</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .info {
+            background-color: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+        .warning {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+        }
+        .step {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border-left: 4px solid #007bff;
+        }
+        .step h3 {
+            margin-top: 0;
+            color: #007bff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📧 Email Verification Test</h1>
+        <p style="text-align: center; color: #666;">Test the Gmail SMTP email verification system</p>
+        
+        <div class="step">
+            <h3>📋 Setup Instructions</h3>
+            <ol>
+                <li>Make sure your server is running on port 6000</li>
+                <li>Configure Gmail SMTP in your .env file (see GMAIL_EMAIL_SETUP_GUIDE.md)</li>
+                <li>Use your Gmail address for testing</li>
+            </ol>
+        </div>
+
+        <form id="testForm">
+            <div class="form-group">
+                <label for="email">Test Email Address:</label>
+                <input type="email" id="email" name="email" value="uwihoreyefrancois12@gmail.com" required>
+                <small style="color: #666;">Use your Gmail address to receive test emails</small>
+            </div>
+
+            <div class="form-group">
+                <label for="fullname">Full Name:</label>
+                <input type="text" id="fullname" name="fullname" value="Test User" required>
+            </div>
+
+            <div class="form-group">
+                <label for="sector">Sector:</label>
+                <input type="text" id="sector" name="sector" value="Kigali" required>
+            </div>
+
+            <div class="form-group">
+                <label for="position">Position:</label>
+                <input type="text" id="position" name="position" value="Police Officer" required>
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password:</label>
+                <input type="password" id="password" name="password" value="TestPassword123!" required>
+            </div>
+
+            <button type="button" onclick="testRegistration()">📝 Test Registration</button>
+            <button type="button" onclick="testResendVerification()">🔄 Test Resend Verification</button>
+            <button type="button" onclick="testLogin()">🔐 Test Login</button>
+            <button type="button" onclick="testVerification()">✅ Test Email Verification</button>
+            <button type="button" onclick="clearResults()">🗑️ Clear Results</button>
+        </form>
+
+        <div id="result"></div>
+
+        <div class="step">
+            <h3>🔍 How to Test Email Verification</h3>
+            <ol>
+                <li>Click "Test Registration" to register a new user</li>
+                <li>Check your email inbox for the verification email</li>
+                <li>Copy the verification token from the email URL</li>
+                <li>Paste the token in the "Verification Token" field below</li>
+                <li>Click "Test Email Verification" to verify the email</li>
+                <li>Click "Test Login" to verify the user can now login</li>
+            </ol>
+        </div>
+
+        <div class="form-group">
+            <label for="verificationToken">Verification Token (from email):</label>
+            <input type="text" id="verificationToken" name="verificationToken" placeholder="Paste the token from your verification email here">
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:6000/api/v1/auth';
+
+        function showResult(message, type = 'info') {
+            const resultDiv = document.getElementById('result');
+            resultDiv.className = `result ${type}`;
+            resultDiv.textContent = message;
+        }
+
+        function clearResults() {
+            document.getElementById('result').innerHTML = '';
+        }
+
+        async function testRegistration() {
+            const formData = {
+                email: document.getElementById('email').value,
+                fullname: document.getElementById('fullname').value,
+                sector: document.getElementById('sector').value,
+                position: document.getElementById('position').value,
+                password: document.getElementById('password').value,
+                role: 'staff'
+            };
+
+            try {
+                showResult('Registering user...', 'info');
+                
+                const response = await fetch(`${API_BASE}/register`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    showResult(`✅ Registration successful!\n\nResponse: ${JSON.stringify(result, null, 2)}\n\n📧 Check your email for verification link!`, 'success');
+                } else {
+                    showResult(`❌ Registration failed: ${result.message}`, 'error');
+                }
+            } catch (error) {
+                showResult(`❌ Network Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function testResendVerification() {
+            const email = document.getElementById('email').value;
+
+            try {
+                showResult('Resending verification email...', 'info');
+                
+                const response = await fetch(`${API_BASE}/resend-verification`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ email })
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    showResult(`✅ Resend verification email sent!\n\nResponse: ${JSON.stringify(result, null, 2)}\n\n📧 Check your email for the new verification link!`, 'success');
+                } else {
+                    showResult(`❌ Resend failed: ${result.message}`, 'error');
+                }
+            } catch (error) {
+                showResult(`❌ Network Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function testLogin() {
+            const loginData = {
+                email: document.getElementById('email').value,
+                password: document.getElementById('password').value
+            };
+
+            try {
+                showResult('Testing login...', 'info');
+                
+                const response = await fetch(`${API_BASE}/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(loginData)
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    showResult(`✅ Login successful!\n\nUser: ${JSON.stringify(result.data.user, null, 2)}\n\nToken: ${result.data.tokens.accessToken.substring(0, 50)}...`, 'success');
+                } else {
+                    showResult(`❌ Login failed: ${result.message}`, 'error');
+                }
+            } catch (error) {
+                showResult(`❌ Network Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function testVerification() {
+            const token = document.getElementById('verificationToken').value.trim();
+
+            if (!token) {
+                showResult('❌ Please enter a verification token from your email', 'error');
+                return;
+            }
+
+            try {
+                showResult('Verifying email...', 'info');
+                
+                const response = await fetch(`${API_BASE}/verify-email/${token}`, {
+                    method: 'GET'
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    showResult(`✅ Email verification successful!\n\nResponse: ${JSON.stringify(result, null, 2)}\n\n🎉 You can now login!`, 'success');
+                } else {
+                    showResult(`❌ Verification failed: ${result.message}`, 'error');
+                }
+            } catch (error) {
+                showResult(`❌ Network Error: ${error.message}`, 'error');
+            }
+        }
+
+        // Auto-fill current date
+        document.getElementById('email').addEventListener('change', function() {
+            if (this.value.includes('@')) {
+                const name = this.value.split('@')[0];
+                document.getElementById('fullname').value = name.charAt(0).toUpperCase() + name.slice(1) + ' Test';
+            }
+        });
+    </script>
+</body>
+</html>

@@ -10,6 +10,7 @@ router.post('/login', validateLogin, authController.login);
 router.get('/verify-email/:token', authController.verifyEmail);
 // Alternative verify route for email links (compatibility)
 router.get('/verify/:token', authController.verifyEmail);
+router.post('/resend-verification', authController.resendVerificationEmail);
 router.post('/create-first-admin', authController.createFirstAdmin);
 router.post('/refresh-token', authController.refreshToken);
 router.post('/forgot-password', authController.forgotPassword);

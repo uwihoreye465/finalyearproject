@@ -262,6 +262,77 @@ async createFirstAdmin(req, res) {
     }
   }
 
+  // Resend verification email
+  async resendVerificationEmail(req, res) {
+    try {
+      const { email } = req.body;
+
+      if (!email) {
+        return res.status(400).json({
+          success: false,
+          message: 'Email is required'
+        });
+      }
+
+      // Check if user exists and is not verified
+      const result = await pool.query(
+        'SELECT user_id, email, fullname, is_verified, verification_token FROM users WHERE email = $1',
+        [email]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found with this email'
+        });
+      }
+
+      const user = result.rows[0];
+
+      if (user.is_verified) {
+        return res.status(400).json({
+          success: false,
+          message: 'Email is already verified'
+        });
+      }
+
+      // Generate new verification token
+      const verificationToken = crypto.randomBytes(32).toString('hex');
+
+      // Update user with new verification token
+      await pool.query(
+        'UPDATE users SET verification_token = $1 WHERE user_id = $2',
+        [verificationToken, user.user_id]
+      );
+
+      // Send resend verification email
+      try {
+        await emailService.resendVerificationEmail(email, verificationToken, user.fullname);
+        console.log('Resend verification email sent successfully');
+      } catch (emailError) {
+        console.error('Email sending failed:', emailError.message);
+        // For development/testing, log the verification token
+        console.log('=== RESEND VERIFICATION TOKEN FOR TESTING ===');
+        console.log('Email:', email);
+        console.log('Verification Token:', verificationToken);
+        console.log('Verification URL:', `${process.env.FRONTEND_URL || 'http://localhost:6000'}/api/v1/auth/verify-email/${verificationToken}`);
+        console.log('=============================================');
+      }
+
+      res.json({
+        success: true,
+        message: 'Verification email sent successfully. Please check your inbox.'
+      });
+
+    } catch (error) {
+      console.error('Resend verification email error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to send verification email'
+      });
+    }
+  }
+
   // Get current user profile
   async getProfile(req, res) {
     try {

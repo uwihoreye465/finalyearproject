@@ -134,13 +134,19 @@ try {
   console.warn('Session setup skipped due to error:', e.message);
 }
 
-// Rate limiting
+// Rate limiting - More generous for production
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100,
+  max: process.env.NODE_ENV === 'production' ? 1000 : 100, // 1000 requests in production, 100 in development
   message: {
     success: false,
     message: 'Too many requests from this IP, please try again later.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => {
+    // Skip rate limiting for health checks
+    return req.path === '/api/health';
   }
 });
 

@@ -91,7 +91,7 @@ const createArrested = async (req, res) => {
 
         const arrestData = {
             fullname: fullname.trim(),
-            image_url: finalImageUrl,
+            image_url: finalImageUrl || null, // Ensure it's actual null, not "NULL" string
             crime_type: crime_type.trim(),
             date_arrested: date_arrested || new Date().toISOString().split('T')[0],
             arrest_location: arrest_location?.trim(),
@@ -100,6 +100,12 @@ const createArrested = async (req, res) => {
             criminal_record_id: validatedCriminalRecordId,
             arresting_officer_id: req.user?.userId || req.user?.user_id || null
         };
+
+        // Debug logging
+        console.log('🔍 Debug - finalImageUrl:', finalImageUrl);
+        console.log('🔍 Debug - finalImageUrl type:', typeof finalImageUrl);
+        console.log('🔍 Debug - arrestData.image_url:', arrestData.image_url);
+        console.log('🔍 Debug - arrestData.image_url type:', typeof arrestData.image_url);
 
         const arrested = await Arrested.create(arrestData);
 

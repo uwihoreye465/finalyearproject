@@ -26,7 +26,7 @@ class Arrested {
 
             const values = [
                 fullname,
-                image_url,
+                image_url || null, // Ensure null instead of undefined or "NULL" string
                 crime_type,
                 date_arrested || new Date().toISOString().split('T')[0],
                 arrest_location,
@@ -35,6 +35,12 @@ class Arrested {
                 criminal_record_id || null,
                 arresting_officer_id || null
             ];
+
+            // Debug logging
+            console.log('🔍 Model Debug - image_url:', image_url);
+            console.log('🔍 Model Debug - image_url type:', typeof image_url);
+            console.log('🔍 Model Debug - values[1] (image_url):', values[1]);
+            console.log('🔍 Model Debug - values[1] type:', typeof values[1]);
 
             const result = await pool.query(query, values);
             return result.rows[0];

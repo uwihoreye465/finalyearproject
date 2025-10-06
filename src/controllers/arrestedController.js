@@ -93,9 +93,16 @@ const createArrested = async (req, res) => {
                 size: req.file.size
             });
         } else if (image_url && image_url !== 'https://via.placeholder.com/300x200?text=Image+Upload+Failed') {
-            // Use provided image_url for JSON requests, but not placeholder URLs
-            finalImageUrl = image_url;
-            console.log(`📸 Using provided image URL: ${finalImageUrl}`);
+            // Check if it's a blob URL (from Flutter web)
+            if (image_url.startsWith('blob:')) {
+                console.log(`⚠️ Blob URL detected - cannot be saved: ${image_url}`);
+                console.log(`💡 This is a Flutter web limitation. Image upload failed.`);
+                finalImageUrl = null;
+            } else {
+                // Use provided image_url for JSON requests, but not placeholder URLs
+                finalImageUrl = image_url;
+                console.log(`📸 Using provided image URL: ${finalImageUrl}`);
+            }
         } else if (image_url === 'https://via.placeholder.com/300x200?text=Image+Upload+Failed') {
             // Don't save placeholder URLs
             console.log(`⚠️ Ignoring placeholder URL: ${image_url}`);

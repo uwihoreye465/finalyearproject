@@ -5,6 +5,28 @@ const pool = require('../config/database');
 
 const createArrested = async (req, res) => {
     try {
+        // Log incoming request details
+        console.log('🚀 ===== NEW ARRESTED RECORD REQUEST =====');
+        console.log('📋 Request Method:', req.method);
+        console.log('📋 Request URL:', req.url);
+        console.log('📋 Content-Type:', req.get('Content-Type'));
+        console.log('📋 Headers:', JSON.stringify(req.headers, null, 2));
+        console.log('📋 Body:', JSON.stringify(req.body, null, 2));
+        console.log('📋 File:', req.file ? {
+            fieldname: req.file.fieldname,
+            originalname: req.file.originalname,
+            filename: req.file.filename,
+            mimetype: req.file.mimetype,
+            size: req.file.size
+        } : 'No file uploaded');
+        console.log('📋 Files:', req.files ? req.files.map(f => ({
+            fieldname: f.fieldname,
+            originalname: f.originalname,
+            filename: f.filename,
+            mimetype: f.mimetype,
+            size: f.size
+        })) : 'No files uploaded');
+        
         // Handle both JSON and form-data requests
         let requestData;
         
@@ -26,6 +48,8 @@ const createArrested = async (req, res) => {
                 });
             }
         }
+        
+        console.log('📝 Processed requestData:', JSON.stringify(requestData, null, 2));
 
         const {
             fullname,
@@ -106,6 +130,7 @@ const createArrested = async (req, res) => {
         console.log('🔍 Debug - finalImageUrl type:', typeof finalImageUrl);
         console.log('🔍 Debug - arrestData.image_url:', arrestData.image_url);
         console.log('🔍 Debug - arrestData.image_url type:', typeof arrestData.image_url);
+        console.log('🔍 Debug - Complete arrestData:', JSON.stringify(arrestData, null, 2));
 
         const arrested = await Arrested.create(arrestData);
 

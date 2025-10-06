@@ -68,14 +68,10 @@ const createArrested = async (req, res) => {
                 mimetype: req.file.mimetype,
                 size: req.file.size
             });
-        } else if (image_url && !image_url.includes('via.placeholder.com') && !image_url.includes('placeholder') && !image_url.includes('example.com') && image_url.startsWith('/uploads/')) {
-            // Use provided image_url for JSON requests, but reject placeholder URLs and ensure it's a valid upload path
+        } else if (image_url) {
+            // Use provided image_url for JSON requests
             finalImageUrl = image_url;
             console.log(`📸 Using provided image URL: ${finalImageUrl}`);
-        } else if (image_url && (image_url.includes('via.placeholder.com') || image_url.includes('placeholder') || image_url.includes('example.com') || !image_url.startsWith('/uploads/'))) {
-            // Reject placeholder URLs and invalid image URLs, set to null
-            console.log(`⚠️ Rejected invalid/placeholder URL: ${image_url}`);
-            finalImageUrl = null;
         }
 
         // Validate criminal_record_id if provided
@@ -256,10 +252,6 @@ const updateArrested = async (req, res) => {
                 mimetype: req.file.mimetype,
                 size: req.file.size
             });
-        } else if (updateData.image_url && (updateData.image_url.includes('via.placeholder.com') || updateData.image_url.includes('placeholder') || updateData.image_url.includes('example.com') || !updateData.image_url.startsWith('/uploads/'))) {
-            // Reject placeholder URLs and invalid image URLs in updates
-            console.log(`⚠️ Rejected invalid/placeholder URL in update: ${updateData.image_url}`);
-            updateData.image_url = null;
         }
 
         // Remove fields that shouldn't be updated

@@ -7,7 +7,7 @@ const { exec } = require('child_process');
 const { promisify } = require('util');
 
 const execAsync = promisify(exec);
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 6000;
 
 // Function to kill processes using port 6000
 async function killProcessesOnPort(port) {

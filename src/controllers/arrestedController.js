@@ -68,10 +68,18 @@ const createArrested = async (req, res) => {
                 mimetype: req.file.mimetype,
                 size: req.file.size
             });
-        } else if (image_url) {
-            // Use provided image_url for JSON requests
+        } else if (image_url && image_url !== 'https://via.placeholder.com/300x200?text=Image+Upload+Failed') {
+            // Use provided image_url for JSON requests, but not placeholder URLs
             finalImageUrl = image_url;
             console.log(`📸 Using provided image URL: ${finalImageUrl}`);
+        } else if (image_url === 'https://via.placeholder.com/300x200?text=Image+Upload+Failed') {
+            // Don't save placeholder URLs
+            console.log(`⚠️ Ignoring placeholder URL: ${image_url}`);
+            finalImageUrl = null;
+        } else {
+            // No image provided - this is valid, image is optional
+            console.log(`ℹ️ No image provided - this is optional`);
+            finalImageUrl = null;
         }
 
         // Validate criminal_record_id if provided
@@ -252,6 +260,10 @@ const updateArrested = async (req, res) => {
                 mimetype: req.file.mimetype,
                 size: req.file.size
             });
+        } else if (updateData.image_url === 'https://via.placeholder.com/300x200?text=Image+Upload+Failed') {
+            // Don't save placeholder URLs
+            console.log(`⚠️ Ignoring placeholder URL in update: ${updateData.image_url}`);
+            delete updateData.image_url; // Remove the placeholder URL from update data
         }
 
         // Remove fields that shouldn't be updated

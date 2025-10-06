@@ -68,10 +68,14 @@ const createArrested = async (req, res) => {
                 mimetype: req.file.mimetype,
                 size: req.file.size
             });
-        } else if (image_url) {
-            // Use provided image_url for JSON requests
+        } else if (image_url && !image_url.includes('via.placeholder.com') && !image_url.includes('placeholder') && !image_url.includes('example.com') && image_url.startsWith('/uploads/')) {
+            // Use provided image_url for JSON requests, but reject placeholder URLs and ensure it's a valid upload path
             finalImageUrl = image_url;
             console.log(`📸 Using provided image URL: ${finalImageUrl}`);
+        } else if (image_url && (image_url.includes('via.placeholder.com') || image_url.includes('placeholder') || image_url.includes('example.com') || !image_url.startsWith('/uploads/'))) {
+            // Reject placeholder URLs and invalid image URLs, set to null
+            console.log(`⚠️ Rejected invalid/placeholder URL: ${image_url}`);
+            finalImageUrl = null;
         }
 
         // Validate criminal_record_id if provided
@@ -156,22 +160,10 @@ const getAllArrested = async (req, res) => {
             arrested = await Arrested.getAll(options);
         }
 
-        // Convert relative image URLs to full URLs
-        const baseUrl = process.env.FRONTEND_URL || 'https://tracking-criminal.onrender.com';
-        const processedRecords = arrested.records.map(record => {
-            if (record.image_url && record.image_url.startsWith('/uploads/')) {
-                record.image_url = `${baseUrl}${record.image_url}`;
-            }
-            return record;
-        });
-
         res.json({
             success: true,
             message: `Found ${arrested.records.length} arrest records`,
-            data: {
-                ...arrested,
-                records: processedRecords
-            }
+            data: arrested
         });
     } catch (error) {
         console.error('Get arrested records error:', error);
@@ -202,12 +194,6 @@ const getArrestedById = async (req, res) => {
                 success: false,
                 message: 'Arrest record not found'
             });
-        }
-
-        // Convert relative image URL to full URL
-        const baseUrl = process.env.FRONTEND_URL || 'https://tracking-criminal.onrender.com';
-        if (arrested.image_url && arrested.image_url.startsWith('/uploads/')) {
-            arrested.image_url = `${baseUrl}${arrested.image_url}`;
         }
 
         res.json({
@@ -270,6 +256,10 @@ const updateArrested = async (req, res) => {
                 mimetype: req.file.mimetype,
                 size: req.file.size
             });
+        } else if (updateData.image_url && (updateData.image_url.includes('via.placeholder.com') || updateData.image_url.includes('placeholder') || updateData.image_url.includes('example.com') || !updateData.image_url.startsWith('/uploads/'))) {
+            // Reject placeholder URLs and invalid image URLs in updates
+            console.log(`⚠️ Rejected invalid/placeholder URL in update: ${updateData.image_url}`);
+            updateData.image_url = null;
         }
 
         // Remove fields that shouldn't be updated
@@ -374,17 +364,6 @@ const deleteArrested = async (req, res) => {
 const getStatistics = async (req, res) => {
     try {
         const stats = await Arrested.getStatistics();
-        
-        // Convert relative image URLs to full URLs for recent arrests
-        const baseUrl = process.env.FRONTEND_URL || 'https://tracking-criminal.onrender.com';
-        if (stats.recentArrests) {
-            stats.recentArrests = stats.recentArrests.map(record => {
-                if (record.image_url && record.image_url.startsWith('/uploads/')) {
-                    record.image_url = `${baseUrl}${record.image_url}`;
-                }
-                return record;
-            });
-        }
         
         res.json({
             success: true,

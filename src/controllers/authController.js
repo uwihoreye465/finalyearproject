@@ -52,6 +52,19 @@ async createFirstAdmin(req, res) {
 }
   // Register new user
   async register(req, res) {
+    console.log('\n🚀 ===== REGISTRATION API CALLED =====');
+    console.log('📅 Timestamp:', new Date().toISOString());
+    console.log('🌐 IP Address:', req.ip || req.connection.remoteAddress);
+    console.log('📱 User Agent:', req.get('User-Agent'));
+    console.log('📋 Request Body:', {
+      sector: req.body.sector,
+      fullname: req.body.fullname,
+      position: req.body.position,
+      email: req.body.email,
+      role: req.body.role,
+      password: '[HIDDEN]'
+    });
+    
     const client = await pool.connect();
     
     try {
@@ -60,46 +73,59 @@ async createFirstAdmin(req, res) {
       const { sector, fullname, position, email, password, role = 'staff' } = req.body;
 
       // Check if user exists
+      console.log('🔍 Checking if user already exists...');
       const existingUser = await client.query(
         'SELECT * FROM users WHERE email = $1',
         [email]
       );
 
       if (existingUser.rows.length > 0) {
+        console.log('❌ User already exists with email:', email);
         return res.status(400).json({
           success: false,
           message: 'User already exists with this email'
         });
       }
+      console.log('✅ Email is available for registration');
 
       // Hash password
+      console.log('🔐 Hashing password...');
       const salt = await bcrypt.genSalt(12);
       const hashedPassword = await bcrypt.hash(password, salt);
+      console.log('✅ Password hashed successfully');
 
       // Generate email verification token
+      console.log('🎫 Generating verification token...');
       const verificationToken = crypto.randomBytes(32).toString('hex');
+      console.log('✅ Verification token generated:', verificationToken.substring(0, 10) + '...');
 
       // Insert user
+      console.log('💾 Inserting user into database...');
       const result = await client.query(
         `INSERT INTO users (sector, fullname, position, email, password, role, verification_token, is_verified) 
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING user_id, email, fullname, role`,
         [sector, fullname, position, email, hashedPassword, role, verificationToken, false]
       );
+      console.log('✅ User inserted successfully with ID:', result.rows[0].user_id);
 
       await client.query('COMMIT');
+      console.log('✅ Database transaction committed');
 
       // Try to send verification email, but don't fail registration if email fails
+      console.log('📧 Attempting to send verification email...');
       try {
         await emailService.sendVerificationEmail(email, verificationToken, fullname);
-        console.log('Verification email sent successfully');
+        console.log('✅ Verification email sent successfully');
+        console.log('📧 Email sent to:', email);
       } catch (emailError) {
-        console.error('Email sending failed:', emailError.message);
+        console.error('❌ Email sending failed:', emailError.message);
+        console.error('❌ Full email error:', emailError);
         // For development/testing, log the verification token
-        console.log('=== VERIFICATION TOKEN FOR TESTING ===');
-        console.log('Email:', email);
-        console.log('Verification Token:', verificationToken);
-        console.log('Verification URL:', `${process.env.FRONTEND_URL || 'http://localhost:6000'}/verify-email?token=${verificationToken}`);
-        console.log('=====================================');
+        console.log('\n=== VERIFICATION TOKEN FOR TESTING ===');
+        console.log('📧 Email:', email);
+        console.log('🎫 Verification Token:', verificationToken);
+        console.log('🔗 Verification URL:', `${process.env.FRONTEND_URL || 'http://localhost:6000'}/api/v1/auth/verify-email/${verificationToken}`);
+        console.log('=====================================\n');
       }
 
       res.status(201).json({
@@ -114,10 +140,25 @@ async createFirstAdmin(req, res) {
           }
         }
       });
+      
+      console.log('✅ Registration API response sent successfully');
+      console.log('📊 Response Status: 201');
+      console.log('📊 Response Data:', {
+        success: true,
+        message: 'User registered successfully. Please check your email to verify your account.',
+        userId: result.rows[0].user_id,
+        email: result.rows[0].email
+      });
+      console.log('🏁 ===== REGISTRATION API COMPLETED =====\n');
 
     } catch (error) {
       await client.query('ROLLBACK');
-      console.error('Registration error:', error);
+      console.error('❌ Registration error:', error);
+      console.error('❌ Error details:', {
+        message: error.message,
+        code: error.code,
+        stack: error.stack
+      });
       
       // Check if it's a database constraint error (user already exists)
       if (error.code === '23505') {
@@ -139,62 +180,89 @@ async createFirstAdmin(req, res) {
 
   // Login user
  async login(req, res) {
+  console.log('\n🔐 ===== LOGIN API CALLED =====');
+  console.log('📅 Timestamp:', new Date().toISOString());
+  console.log('🌐 IP Address:', req.ip || req.connection.remoteAddress);
+  console.log('📱 User Agent:', req.get('User-Agent'));
+  console.log('📋 Request Body:', {
+    email: req.body.email,
+    password: '[HIDDEN]'
+  });
+  
   try {
     const { email, password } = req.body;
 
     // Find user
+    console.log('🔍 Looking for user with email:', email);
     const result = await pool.query(
       'SELECT * FROM users WHERE email = $1',
       [email]
     );
 
     if (result.rows.length === 0) {
+      console.log('❌ User not found with email:', email);
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
       });
     }
+    console.log('✅ User found with ID:', result.rows[0].user_id);
 
     const user = result.rows[0];
 
-
       // Check if user is verified
+      console.log('🔍 Checking email verification status...');
+      console.log('📧 User verification status:', user.is_verified);
       if (!user.is_verified) {
+        console.log('❌ User email not verified');
         return res.status(401).json({
           success: false,
           message: 'Please verify your email before logging in'
         });
       }
+      console.log('✅ User email is verified');
 
       // Check if user is approved (for staff)
+      console.log('🔍 Checking user approval status...');
+      console.log('👤 User role:', user.role);
+      console.log('✅ User approval status:', user.is_approved);
       if (user.role === 'staff' && !user.is_approved) {
+        console.log('❌ Staff user not approved by admin');
         return res.status(401).json({
           success: false,
           message: 'Your account is pending admin approval'
         });
       }
+      console.log('✅ User approval check passed');
 
       // Verify password
+      console.log('🔐 Verifying password...');
       const isValidPassword = await bcrypt.compare(password, user.password);
       if (!isValidPassword) {
+        console.log('❌ Invalid password for user:', email);
         return res.status(401).json({
           success: false,
           message: 'Invalid credentials'
         });
       }
+      console.log('✅ Password verified successfully');
 
       // Generate tokens
+      console.log('🎫 Generating JWT tokens...');
       const { accessToken, refreshToken } = generateTokens({
         userId: user.user_id,
         email: user.email,
         role: user.role
       });
+      console.log('✅ JWT tokens generated successfully');
 
       // Update last login
+      console.log('📅 Updating last login timestamp...');
       await pool.query(
         'UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE user_id = $1',
         [user.user_id]
       );
+      console.log('✅ Last login timestamp updated');
 
       // Optional session attach without changing API response
       if (req.session) {
@@ -220,9 +288,25 @@ async createFirstAdmin(req, res) {
           }
         }
       });
+      
+      console.log('✅ Login API response sent successfully');
+      console.log('📊 Response Status: 200');
+      console.log('📊 Response Data:', {
+        success: true,
+        message: 'Login successful',
+        userId: user.user_id,
+        email: user.email,
+        role: user.role
+      });
+      console.log('🏁 ===== LOGIN API COMPLETED =====\n');
 
     } catch (error) {
-      console.error('Login error:', error);
+      console.error('❌ Login error:', error);
+      console.error('❌ Error details:', {
+        message: error.message,
+        code: error.code,
+        stack: error.stack
+      });
       res.status(500).json({
         success: false,
         message: 'Login failed',
@@ -233,28 +317,52 @@ async createFirstAdmin(req, res) {
 
   // Verify email
   async verifyEmail(req, res) {
+    console.log('\n✅ ===== EMAIL VERIFICATION API CALLED =====');
+    console.log('📅 Timestamp:', new Date().toISOString());
+    console.log('🌐 IP Address:', req.ip || req.connection.remoteAddress);
+    console.log('📱 User Agent:', req.get('User-Agent'));
+    console.log('🎫 Verification Token:', req.params.token);
+    
     try {
       const { token } = req.params;
-
+      
+      console.log('🔍 Looking for user with verification token...');
       const result = await pool.query(
         'UPDATE users SET is_verified = true, verification_token = NULL WHERE verification_token = $1 RETURNING *',
         [token]
       );
 
       if (result.rows.length === 0) {
+        console.log('❌ Invalid or expired verification token');
         return res.status(400).json({
           success: false,
           message: 'Invalid or expired verification token'
         });
       }
+      
+      console.log('✅ Email verification successful');
+      console.log('👤 User verified:', {
+        userId: result.rows[0].user_id,
+        email: result.rows[0].email,
+        fullname: result.rows[0].fullname
+      });
 
       res.json({
         success: true,
         message: 'Email verified successfully. You can now log in.'
       });
+      
+      console.log('✅ Email verification API response sent successfully');
+      console.log('📊 Response Status: 200');
+      console.log('🏁 ===== EMAIL VERIFICATION API COMPLETED =====\n');
 
     } catch (error) {
-      console.error('Email verification error:', error);
+      console.error('❌ Email verification error:', error);
+      console.error('❌ Error details:', {
+        message: error.message,
+        code: error.code,
+        stack: error.stack
+      });
       res.status(500).json({
         success: false,
         message: 'Email verification failed'
@@ -264,10 +372,17 @@ async createFirstAdmin(req, res) {
 
   // Resend verification email
   async resendVerificationEmail(req, res) {
+    console.log('\n🔄 ===== RESEND VERIFICATION API CALLED =====');
+    console.log('📅 Timestamp:', new Date().toISOString());
+    console.log('🌐 IP Address:', req.ip || req.connection.remoteAddress);
+    console.log('📱 User Agent:', req.get('User-Agent'));
+    console.log('📧 Request Email:', req.body.email);
+    
     try {
       const { email } = req.body;
 
       if (!email) {
+        console.log('❌ No email provided in request');
         return res.status(400).json({
           success: false,
           message: 'Email is required'
@@ -275,57 +390,78 @@ async createFirstAdmin(req, res) {
       }
 
       // Check if user exists and is not verified
+      console.log('🔍 Looking for user with email:', email);
       const result = await pool.query(
         'SELECT user_id, email, fullname, is_verified, verification_token FROM users WHERE email = $1',
         [email]
       );
 
       if (result.rows.length === 0) {
+        console.log('❌ User not found with email:', email);
         return res.status(404).json({
           success: false,
           message: 'User not found with this email'
         });
       }
+      console.log('✅ User found with ID:', result.rows[0].user_id);
 
       const user = result.rows[0];
 
       if (user.is_verified) {
+        console.log('❌ User email already verified');
         return res.status(400).json({
           success: false,
           message: 'Email is already verified'
         });
       }
+      console.log('✅ User email not verified, proceeding with resend');
 
       // Generate new verification token
+      console.log('🎫 Generating new verification token...');
       const verificationToken = crypto.randomBytes(32).toString('hex');
+      console.log('✅ New verification token generated:', verificationToken.substring(0, 10) + '...');
 
       // Update user with new verification token
+      console.log('💾 Updating user with new verification token...');
       await pool.query(
         'UPDATE users SET verification_token = $1 WHERE user_id = $2',
         [verificationToken, user.user_id]
       );
+      console.log('✅ User updated with new verification token');
 
       // Send resend verification email
+      console.log('📧 Attempting to send resend verification email...');
       try {
         await emailService.resendVerificationEmail(email, verificationToken, user.fullname);
-        console.log('Resend verification email sent successfully');
+        console.log('✅ Resend verification email sent successfully');
+        console.log('📧 Email sent to:', email);
       } catch (emailError) {
-        console.error('Email sending failed:', emailError.message);
+        console.error('❌ Email sending failed:', emailError.message);
+        console.error('❌ Full email error:', emailError);
         // For development/testing, log the verification token
-        console.log('=== RESEND VERIFICATION TOKEN FOR TESTING ===');
-        console.log('Email:', email);
-        console.log('Verification Token:', verificationToken);
-        console.log('Verification URL:', `${process.env.FRONTEND_URL || 'http://localhost:6000'}/api/v1/auth/verify-email/${verificationToken}`);
-        console.log('=============================================');
+        console.log('\n=== RESEND VERIFICATION TOKEN FOR TESTING ===');
+        console.log('📧 Email:', email);
+        console.log('🎫 Verification Token:', verificationToken);
+        console.log('🔗 Verification URL:', `${process.env.FRONTEND_URL || 'http://localhost:6000'}/api/v1/auth/verify-email/${verificationToken}`);
+        console.log('=============================================\n');
       }
 
       res.json({
         success: true,
         message: 'Verification email sent successfully. Please check your inbox.'
       });
+      
+      console.log('✅ Resend verification API response sent successfully');
+      console.log('📊 Response Status: 200');
+      console.log('🏁 ===== RESEND VERIFICATION API COMPLETED =====\n');
 
     } catch (error) {
-      console.error('Resend verification email error:', error);
+      console.error('❌ Resend verification email error:', error);
+      console.error('❌ Error details:', {
+        message: error.message,
+        code: error.code,
+        stack: error.stack
+      });
       res.status(500).json({
         success: false,
         message: 'Failed to send verification email'

@@ -92,7 +92,7 @@ class EmailService {
     }
 
     async sendVerificationEmail(email, verificationToken, fullname) {
-        const verifyUrl = `${process.env.FRONTEND_URL || 'http://localhost:6000'}/api/v1/auth/verify-email/${verificationToken}`;
+        const verifyUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/my_account.html?token=${verificationToken}`;
         
         // Always log the verification details for debugging
         console.log('📧 Sending verification email...');
@@ -101,34 +101,60 @@ class EmailService {
         console.log('📧 URL:', verifyUrl);
         
         const mailOptions = {
-            from: `"FindSinners System" <${process.env.EMAIL_USER || 'uwihoreyefrancois12@gmail.com'}>`,
+            from: `"Online Tracking criminal System" <${process.env.EMAIL_USER || 'uwihoreyefrancois12@gmail.com'}>`,
             to: email,
-            subject: '🔐 Verify Your Email - FindSinners System',
+            subject: 'USER VERIFICATION - Email Verification Required',
             html: `
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8f9fa;">
                     <div style="background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
                         <div style="text-align: center; margin-bottom: 30px;">
-                            <h1 style="color: #2c3e50; margin: 0;">🚔 FindSinners System</h1>
+                            <h1 style="color: #2c3e50; margin: 0;">🚔 Online Tracking criminal System</h1>
                             <p style="color: #7f8c8d; margin: 5px 0 0 0;">Criminal Tracking & Management</p>
                         </div>
                         
                         <h2 style="color: #2c3e50; margin-bottom: 20px;">Email Verification Required</h2>
                         <p style="color: #34495e; font-size: 16px; line-height: 1.6;">Hello <strong>${fullname}</strong>,</p>
-                        <p style="color: #34495e; font-size: 16px; line-height: 1.6;">Thank you for registering with FindSinners System. To complete your registration and access your account, please verify your email address by clicking the button below:</p>
+                        <p style="color: #34495e; font-size: 16px; line-height: 1.6;">Thank you for registering with Online Tracking criminal System. To complete your registration and access your account, please verify your email address by clicking the button below:</p>
                         
                         <div style="text-align: center; margin: 40px 0;">
-                            <a href="${verifyUrl}" style="background: linear-gradient(135deg, #28a745, #20c997); color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: bold; font-size: 16px; box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);">✅ Verify My Email</a>
+                            <a href="${verifyUrl}" style="background: linear-gradient(135deg, #28a745, #20c997); color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: bold; font-size: 16px; box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);">Click here to verify</a>
+                        </div>
+                        
+                        <div style="background: #e8f4fd; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #007bff;">
+                            <p style="color: #004085; margin: 0; font-size: 14px;"><strong>💡 Alternative Access Method:</strong></p>
+                            <p style="color: #004085; margin: 10px 0; font-size: 13px;">If the button above doesn't work due to browser restrictions, you can access your account page directly:</p>
+                            <p style="color: #007bff; font-size: 12px; word-break: break-all; background: white; padding: 10px; border-radius: 5px; margin: 10px 0; font-family: monospace;">file:///C:/Users/uwiho/Documents/all%20project/findsinnerssystem/my_account.html</p>
+                            <p style="color: #004085; margin: 0; font-size: 12px;">Copy and paste this path into your browser's address bar.</p>
+                        </div>
+                        
+                        <div style="background: #fff3cd; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #ffc107;">
+                            <p style="color: #856404; margin: 0; font-size: 14px;"><strong>⚠️ Chrome Users:</strong> If you get "ERR_UNSAFE_PORT" error, use Microsoft Edge or Firefox instead.</p>
                         </div>
                         
                         <div style="background: #e8f5e8; padding: 15px; border-radius: 5px; margin: 20px 0;">
                             <p style="color: #155724; margin: 0; font-size: 14px;"><strong>⏰ Important:</strong> This verification link will expire in 24 hours for security reasons.</p>
                         </div>
                         
+                        <div style="background: #d1ecf1; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                            <p style="color: #0c5460; margin: 0; font-size: 14px;"><strong>🔧 Alternative Methods:</strong></p>
+                            <ul style="color: #0c5460; font-size: 12px; margin: 10px 0; padding-left: 20px;">
+                                <li>Use Microsoft Edge or Firefox browser</li>
+                                <li>Copy the token below and use manual verification</li>
+                                <li>Start Chrome with: <code>chrome.exe --explicitly-allowed-ports=6000</code></li>
+                            </ul>
+                        </div>
+                        
                         <p style="color: #6c757d; font-size: 14px; margin-top: 30px;">If the button doesn't work, you can copy and paste this link into your browser:</p>
                         <p style="color: #007bff; font-size: 12px; word-break: break-all; background: #f8f9fa; padding: 10px; border-radius: 5px; margin: 10px 0;">${verifyUrl}</p>
                         
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                            <p style="color: #495057; margin: 0; font-size: 14px;"><strong>🔑 Verification Token:</strong></p>
+                            <p style="color: #007bff; font-size: 12px; word-break: break-all; background: white; padding: 10px; border-radius: 5px; margin: 10px 0; font-family: monospace;">${verificationToken}</p>
+                            <p style="color: #6c757d; font-size: 12px; margin: 0;">Use this token for manual verification if needed.</p>
+                        </div>
+                        
                         <hr style="margin: 30px 0; border: none; border-top: 1px solid #dee2e6;">
-                        <p style="color: #6c757d; font-size: 14px; text-align: center; margin: 0;">Best regards,<br><strong>FindSinners System Team</strong></p>
+                        <p style="color: #6c757d; font-size: 14px; text-align: center; margin: 0;">Best regards,<br><strong>Online Tracking criminal System Team</strong></p>
                     </div>
                 </div>
             `
@@ -168,7 +194,7 @@ class EmailService {
 
     // Resend verification email
     async resendVerificationEmail(email, verificationToken, fullname) {
-        const verifyUrl = `${process.env.FRONTEND_URL || 'http://localhost:6000'}/api/v1/auth/verify-email/${verificationToken}`;
+        const verifyUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/my_account.html?token=${verificationToken}`;
         
         // Always log the verification details for debugging
         console.log('🔄 Resending verification email...');
@@ -177,14 +203,14 @@ class EmailService {
         console.log('📧 URL:', verifyUrl);
         
         const mailOptions = {
-            from: `"FindSinners System" <${process.env.EMAIL_USER || 'uwihoreyefrancois12@gmail.com'}>`,
+            from: `"Online Tracking criminal System" <${process.env.EMAIL_USER || 'uwihoreyefrancois12@gmail.com'}>`,
             to: email,
-            subject: '🔄 Resend: Verify Your Email - FindSinners System',
+            subject: 'USER VERIFICATION - Resend Email Verification',
             html: `
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8f9fa;">
                     <div style="background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
                         <div style="text-align: center; margin-bottom: 30px;">
-                            <h1 style="color: #2c3e50; margin: 0;">🚔 FindSinners System</h1>
+                            <h1 style="color: #2c3e50; margin: 0;">🚔 Online Tracking criminal System</h1>
                             <p style="color: #7f8c8d; margin: 5px 0 0 0;">Criminal Tracking & Management</p>
                         </div>
                         
@@ -193,7 +219,14 @@ class EmailService {
                         <p style="color: #34495e; font-size: 16px; line-height: 1.6;">You requested a new verification email. Please verify your email address by clicking the button below to complete your registration:</p>
                         
                         <div style="text-align: center; margin: 40px 0;">
-                            <a href="${verifyUrl}" style="background: linear-gradient(135deg, #007bff, #0056b3); color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: bold; font-size: 16px; box-shadow: 0 4px 15px rgba(0, 123, 255, 0.3);">🔄 Verify My Email Now</a>
+                            <a href="${verifyUrl}" style="background: linear-gradient(135deg, #007bff, #0056b3); color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: bold; font-size: 16px; box-shadow: 0 4px 15px rgba(0, 123, 255, 0.3);">Click here to verify</a>
+                        </div>
+                        
+                        <div style="background: #e8f4fd; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #007bff;">
+                            <p style="color: #004085; margin: 0; font-size: 14px;"><strong>💡 Alternative Access Method:</strong></p>
+                            <p style="color: #004085; margin: 10px 0; font-size: 13px;">If the button above doesn't work due to browser restrictions, you can access your account page directly:</p>
+                            <p style="color: #007bff; font-size: 12px; word-break: break-all; background: white; padding: 10px; border-radius: 5px; margin: 10px 0; font-family: monospace;">file:///C:/Users/uwiho/Documents/all%20project/findsinnerssystem/my_account.html</p>
+                            <p style="color: #004085; margin: 0; font-size: 12px;">Copy and paste this path into your browser's address bar.</p>
                         </div>
                         
                         <div style="background: #fff3cd; padding: 15px; border-radius: 5px; margin: 20px 0;">
@@ -208,7 +241,7 @@ class EmailService {
                         <p style="color: #007bff; font-size: 12px; word-break: break-all; background: #f8f9fa; padding: 10px; border-radius: 5px; margin: 10px 0;">${verifyUrl}</p>
                         
                         <hr style="margin: 30px 0; border: none; border-top: 1px solid #dee2e6;">
-                        <p style="color: #6c757d; font-size: 14px; text-align: center; margin: 0;">Best regards,<br><strong>FindSinners System Team</strong></p>
+                        <p style="color: #6c757d; font-size: 14px; text-align: center; margin: 0;">Best regards,<br><strong>Online Tracking criminal System Team</strong></p>
                     </div>
                 </div>
             `

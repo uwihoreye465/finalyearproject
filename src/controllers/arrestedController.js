@@ -156,10 +156,22 @@ const getAllArrested = async (req, res) => {
             arrested = await Arrested.getAll(options);
         }
 
+        // Convert relative image URLs to full URLs
+        const baseUrl = process.env.FRONTEND_URL || 'https://tracking-criminal.onrender.com';
+        const processedRecords = arrested.records.map(record => {
+            if (record.image_url && record.image_url.startsWith('/uploads/')) {
+                record.image_url = `${baseUrl}${record.image_url}`;
+            }
+            return record;
+        });
+
         res.json({
             success: true,
             message: `Found ${arrested.records.length} arrest records`,
-            data: arrested
+            data: {
+                ...arrested,
+                records: processedRecords
+            }
         });
     } catch (error) {
         console.error('Get arrested records error:', error);
@@ -190,6 +202,12 @@ const getArrestedById = async (req, res) => {
                 success: false,
                 message: 'Arrest record not found'
             });
+        }
+
+        // Convert relative image URL to full URL
+        const baseUrl = process.env.FRONTEND_URL || 'https://tracking-criminal.onrender.com';
+        if (arrested.image_url && arrested.image_url.startsWith('/uploads/')) {
+            arrested.image_url = `${baseUrl}${arrested.image_url}`;
         }
 
         res.json({
@@ -356,6 +374,17 @@ const deleteArrested = async (req, res) => {
 const getStatistics = async (req, res) => {
     try {
         const stats = await Arrested.getStatistics();
+        
+        // Convert relative image URLs to full URLs for recent arrests
+        const baseUrl = process.env.FRONTEND_URL || 'https://tracking-criminal.onrender.com';
+        if (stats.recentArrests) {
+            stats.recentArrests = stats.recentArrests.map(record => {
+                if (record.image_url && record.image_url.startsWith('/uploads/')) {
+                    record.image_url = `${baseUrl}${record.image_url}`;
+                }
+                return record;
+            });
+        }
         
         res.json({
             success: true,

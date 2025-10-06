@@ -1,0 +1,174 @@
+{
+  "info": {
+    "name": "FindSinners System - Email Verification API",
+    "description": "Complete API collection for testing email verification system",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:6000/api/health",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "6000",
+          "path": ["api", "health"]
+        },
+        "description": "Check if the server is running"
+      },
+      "response": []
+    },
+    {
+      "name": "Register User (Sends Verification Email)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"sector\": \"Kigali\",\n    \"fullname\": \"Test User\",\n    \"position\": \"Police Officer\",\n    \"email\": \"uwihoreyefrancois12@gmail.com\",\n    \"password\": \"TestPassword123!\",\n    \"role\": \"staff\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:6000/api/v1/auth/register",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "6000",
+          "path": ["api", "v1", "auth", "register"]
+        },
+        "description": "Register a new user. This will send a verification email to the user's email address."
+      },
+      "response": []
+    },
+    {
+      "name": "Resend Verification Email",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"email\": \"uwihoreyefrancois12@gmail.com\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:6000/api/v1/auth/resend-verification",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "6000",
+          "path": ["api", "v1", "auth", "resend-verification"]
+        },
+        "description": "Resend verification email to a user who hasn't verified their email yet."
+      },
+      "response": []
+    },
+    {
+      "name": "Verify Email (Use Token from Email)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:6000/api/v1/auth/verify-email/{{verification_token}}",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "6000",
+          "path": ["api", "v1", "auth", "verify-email", "{{verification_token}}"]
+        },
+        "description": "Verify user's email using the token from the verification email. Replace {{verification_token}} with the actual token from the email."
+      },
+      "response": []
+    },
+    {
+      "name": "Login (Should Fail Before Verification)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"email\": \"uwihoreyefrancois12@gmail.com\",\n    \"password\": \"TestPassword123!\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:6000/api/v1/auth/login",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "6000",
+          "path": ["api", "v1", "auth", "login"]
+        },
+        "description": "Try to login before email verification. This should fail with 'Please verify your email before logging in' message."
+      },
+      "response": []
+    },
+    {
+      "name": "Login (Should Work After Verification)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"email\": \"uwihoreyefrancois12@gmail.com\",\n    \"password\": \"TestPassword123!\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:6000/api/v1/auth/login",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "6000",
+          "path": ["api", "v1", "auth", "login"]
+        },
+        "description": "Login after email verification. This should work and return access token."
+      },
+      "response": []
+    },
+    {
+      "name": "Get User Profile (Protected Route)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:6000/api/v1/auth/profile",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "6000",
+          "path": ["api", "v1", "auth", "profile"]
+        },
+        "description": "Get user profile using the access token from login."
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "verification_token",
+      "value": "your-token-from-email-here",
+      "description": "The verification token from the email"
+    },
+    {
+      "key": "access_token",
+      "value": "your-access-token-from-login",
+      "description": "The access token from successful login"
+    }
+  ]
+}

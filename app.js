@@ -61,33 +61,37 @@ app.use((req, res, next) => {
 // Security middleware
 app.use(helmet());
 
-// Enhanced CORS configuration for auth endpoints
+// Enhanced CORS configuration for web, Flutter web (random ports), and real devices
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
+    // Allow requests with no origin (mobile apps, curl, Postman)
     if (!origin) return callback(null, true);
-    
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://localhost:5000', 
-      'http://localhost:6000',
-      'http://localhost:8080',
-      'http://127.0.0.1:3000',
-      'http://127.0.0.1:5000',
-      'http://127.0.0.1:6000',
-      process.env.FRONTEND_URL
-    ].filter(Boolean); // Remove undefined values
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      // Allow for development and testing
-      if (process.env.NODE_ENV === 'development') {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
+
+    // In development, allow all origins to support random localhost ports and LAN devices
+    if (process.env.NODE_ENV !== 'production' || process.env.CORS_ALLOW_ALL === 'true') {
+      return callback(null, true);
     }
+
+    // Strict allowlist in production
+    const allowedOrigins = [
+      process.env.FRONTEND_URL
+    ].filter(Boolean);
+
+    // Allow localhost/127.0.0.1 with any port (Flutter web dev, random ports)
+    const localhostRegex = /^http:\/\/(localhost|127\.0\.0\.1)(:\\d+)?$/i;
+
+    // Allow common LAN IP ranges (real device testing over Wi‑Fi): 10.x.x.x, 172.16-31.x.x, 192.168.x.x
+    const lanRegex = /^http:\/\/(10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\\d+)?$/i;
+
+    if (
+      allowedOrigins.includes(origin) ||
+      localhostRegex.test(origin) ||
+      lanRegex.test(origin)
+    ) {
+      return callback(null, true);
+    }
+
+    return callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],

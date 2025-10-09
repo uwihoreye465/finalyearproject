@@ -2,6 +2,7 @@ const Arrested = require('../models/Arrested');
 const path = require('path');
 const fs = require('fs');
 const pool = require('../config/database');
+const CloudinaryService = require('../services/cloudinaryService');
 
 const createArrested = async (req, res) => {
     try {
@@ -79,25 +80,70 @@ const createArrested = async (req, res) => {
             });
         }
 
-        // Handle image upload
+        // Handle image upload with Cloudinary
         let finalImageUrl = null;
         
         if (req.file) {
-            // File is already saved by multer, just generate the URL
-            finalImageUrl = `/uploads/arrested/images/${req.file.filename}`;
-            console.log(`📸 Image uploaded successfully: ${finalImageUrl}`);
-            console.log(`📸 File details:`, {
-                originalname: req.file.originalname,
-                filename: req.file.filename,
-                mimetype: req.file.mimetype,
-                size: req.file.size
-            });
+            // File uploaded via multer - upload to Cloudinary
+            try {
+                console.log(`📸 Uploading file to Cloudinary: ${req.file.filename}`);
+                const uploadResult = await CloudinaryService.uploadFromPath(
+                    req.file.path, 
+                    'arrested/images',
+                    `arrested_${Date.now()}_${Math.random().toString(36).substring(7)}`
+                );
+                
+                finalImageUrl = uploadResult.url;
+                console.log(`✅ Image uploaded to Cloudinary: ${finalImageUrl}`);
+                
+                // Clean up local file after successful upload
+                try {
+                    fs.unlinkSync(req.file.path);
+                    console.log(`🗑️ Local file cleaned up: ${req.file.path}`);
+                } catch (cleanupError) {
+                    console.warn(`⚠️ Failed to clean up local file: ${cleanupError.message}`);
+                }
+            } catch (uploadError) {
+                console.error(`❌ Cloudinary upload failed: ${uploadError.message}`);
+                return res.status(500).json({
+                    success: false,
+                    message: 'Failed to upload image to cloud storage',
+                    error: uploadError.message
+                });
+            }
         } else if (image_url && image_url !== 'https://via.placeholder.com/300x200?text=Image+Upload+Failed') {
-            // Check if it's a blob URL (from Flutter web)
+            // Check if it's a blob URL (from Flutter web) - convert to Cloudinary
             if (image_url.startsWith('blob:')) {
                 console.log(`⚠️ Blob URL detected - cannot be saved: ${image_url}`);
                 console.log(`💡 This is a Flutter web limitation. Image upload failed.`);
                 finalImageUrl = null;
+            } else if (image_url.startsWith('data:image/')) {
+                // Handle base64 image data
+                try {
+                    console.log(`📸 Processing base64 image data`);
+                    const base64Data = image_url.split(',')[1];
+                    const imageBuffer = Buffer.from(base64Data, 'base64');
+                    
+                    const uploadResult = await CloudinaryService.uploadFromBuffer(
+                        imageBuffer,
+                        'arrested/images',
+                        `arrested_${Date.now()}_${Math.random().toString(36).substring(7)}`
+                    );
+                    
+                    finalImageUrl = uploadResult.url;
+                    console.log(`✅ Base64 image uploaded to Cloudinary: ${finalImageUrl}`);
+                } catch (uploadError) {
+                    console.error(`❌ Base64 Cloudinary upload failed: ${uploadError.message}`);
+                    return res.status(500).json({
+                        success: false,
+                        message: 'Failed to upload base64 image to cloud storage',
+                        error: uploadError.message
+                    });
+                }
+            } else if (image_url.includes('cloudinary.com')) {
+                // Already a Cloudinary URL - use as is
+                finalImageUrl = image_url;
+                console.log(`📸 Using existing Cloudinary URL: ${finalImageUrl}`);
             } else {
                 // Use provided image_url for JSON requests, but not placeholder URLs
                 finalImageUrl = image_url;
@@ -286,22 +332,90 @@ const updateArrested = async (req, res) => {
             }
         }
 
-        // Handle image upload if provided
+        // Handle image upload with Cloudinary if provided
         if (req.file) {
-            // File is already saved by multer, generate the URL
-            const imageUrl = `/uploads/arrested/images/${req.file.filename}`;
-            updateData.image_url = imageUrl;
-            console.log(`📸 Image updated successfully: ${imageUrl}`);
-            console.log(`📸 File details:`, {
-                originalname: req.file.originalname,
-                filename: req.file.filename,
-                mimetype: req.file.mimetype,
-                size: req.file.size
-            });
+            try {
+                console.log(`📸 Uploading updated file to Cloudinary: ${req.file.filename}`);
+                
+                // Delete old image from Cloudinary if it exists
+                if (existingRecord.image_url && existingRecord.image_url.includes('cloudinary.com')) {
+                    const oldPublicId = CloudinaryService.extractPublicId(existingRecord.image_url);
+                    if (oldPublicId) {
+                        try {
+                            await CloudinaryService.deleteImage(oldPublicId);
+                            console.log(`🗑️ Old image deleted from Cloudinary: ${oldPublicId}`);
+                        } catch (deleteError) {
+                            console.warn(`⚠️ Failed to delete old image: ${deleteError.message}`);
+                        }
+                    }
+                }
+                
+                // Upload new image to Cloudinary
+                const uploadResult = await CloudinaryService.uploadFromPath(
+                    req.file.path, 
+                    'arrested/images',
+                    `arrested_${Date.now()}_${Math.random().toString(36).substring(7)}`
+                );
+                
+                updateData.image_url = uploadResult.url;
+                console.log(`✅ Updated image uploaded to Cloudinary: ${uploadResult.url}`);
+                
+                // Clean up local file after successful upload
+                try {
+                    fs.unlinkSync(req.file.path);
+                    console.log(`🗑️ Local file cleaned up: ${req.file.path}`);
+                } catch (cleanupError) {
+                    console.warn(`⚠️ Failed to clean up local file: ${cleanupError.message}`);
+                }
+            } catch (uploadError) {
+                console.error(`❌ Cloudinary upload failed: ${uploadError.message}`);
+                return res.status(500).json({
+                    success: false,
+                    message: 'Failed to upload updated image to cloud storage',
+                    error: uploadError.message
+                });
+            }
         } else if (updateData.image_url === 'https://via.placeholder.com/300x200?text=Image+Upload+Failed') {
             // Don't save placeholder URLs
             console.log(`⚠️ Ignoring placeholder URL in update: ${updateData.image_url}`);
             delete updateData.image_url; // Remove the placeholder URL from update data
+        } else if (updateData.image_url && updateData.image_url.startsWith('data:image/')) {
+            // Handle base64 image data in update
+            try {
+                console.log(`📸 Processing base64 image data for update`);
+                
+                // Delete old image from Cloudinary if it exists
+                if (existingRecord.image_url && existingRecord.image_url.includes('cloudinary.com')) {
+                    const oldPublicId = CloudinaryService.extractPublicId(existingRecord.image_url);
+                    if (oldPublicId) {
+                        try {
+                            await CloudinaryService.deleteImage(oldPublicId);
+                            console.log(`🗑️ Old image deleted from Cloudinary: ${oldPublicId}`);
+                        } catch (deleteError) {
+                            console.warn(`⚠️ Failed to delete old image: ${deleteError.message}`);
+                        }
+                    }
+                }
+                
+                const base64Data = updateData.image_url.split(',')[1];
+                const imageBuffer = Buffer.from(base64Data, 'base64');
+                
+                const uploadResult = await CloudinaryService.uploadFromBuffer(
+                    imageBuffer,
+                    'arrested/images',
+                    `arrested_${Date.now()}_${Math.random().toString(36).substring(7)}`
+                );
+                
+                updateData.image_url = uploadResult.url;
+                console.log(`✅ Updated base64 image uploaded to Cloudinary: ${uploadResult.url}`);
+            } catch (uploadError) {
+                console.error(`❌ Base64 Cloudinary upload failed: ${uploadError.message}`);
+                return res.status(500).json({
+                    success: false,
+                    message: 'Failed to upload updated base64 image to cloud storage',
+                    error: uploadError.message
+                });
+            }
         }
 
         // Remove fields that shouldn't be updated
@@ -371,18 +485,33 @@ const deleteArrested = async (req, res) => {
         // Handle image deletion if image_url exists
         if (arrested.image_url) {
             try {
-                // Extract filename from image_url
-                const filename = arrested.image_url.replace('/uploads/arrested/images/', '');
-                const filePath = path.join(process.cwd(), 'uploads', 'arrested', 'images', filename);
-                
-                if (fs.existsSync(filePath)) {
-                    fs.unlinkSync(filePath);
-                    console.log(`🗑️ Deleted image file: ${filePath}`);
+                if (arrested.image_url.includes('cloudinary.com')) {
+                    // Delete from Cloudinary
+                    const publicId = CloudinaryService.extractPublicId(arrested.image_url);
+                    if (publicId) {
+                        const deleteResult = await CloudinaryService.deleteImage(publicId);
+                        if (deleteResult.success) {
+                            console.log(`🗑️ Deleted image from Cloudinary: ${publicId}`);
+                        } else {
+                            console.warn(`⚠️ Failed to delete image from Cloudinary: ${publicId}`);
+                        }
+                    }
+                } else if (arrested.image_url.startsWith('/uploads/')) {
+                    // Delete local file (legacy support)
+                    const filename = arrested.image_url.replace('/uploads/arrested/images/', '');
+                    const filePath = path.join(process.cwd(), 'uploads', 'arrested', 'images', filename);
+                    
+                    if (fs.existsSync(filePath)) {
+                        fs.unlinkSync(filePath);
+                        console.log(`🗑️ Deleted local image file: ${filePath}`);
+                    } else {
+                        console.log(`⚠️ Local image file not found on disk: ${filePath}`);
+                    }
                 } else {
-                    console.log(`⚠️ Image file not found on disk: ${filePath}`);
+                    console.log(`ℹ️ Image URL is not a local file or Cloudinary URL: ${arrested.image_url}`);
                 }
             } catch (error) {
-                console.error('Error deleting image file:', error);
+                console.error('Error deleting image:', error);
                 // Don't fail the deletion if image file deletion fails
             }
         }

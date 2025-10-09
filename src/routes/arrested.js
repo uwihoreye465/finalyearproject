@@ -51,10 +51,10 @@ router.get('/:arrestId/download/image', arrestedController.downloadArrestedImage
 router.get('/download/image/:filename', arrestedController.downloadArrestedImageByFilename);
 
 // Image upload route (must come before /:id route)
-router.post('/upload-image', auth, (req, res, next) => {
+router.post('/upload-image', auth, async (req, res, next) => {
     // Check if request is JSON (base64) or form-data
     if (req.is('application/json')) {
-        // Handle base64 image upload for web
+        // Handle base64 image upload for web - this will be handled by Cloudinary in controller
         try {
             const { image, filename } = req.body;
             
@@ -65,41 +65,18 @@ router.post('/upload-image', auth, (req, res, next) => {
                 });
             }
 
-            // Convert base64 to buffer
-            const imageBuffer = Buffer.from(image, 'base64');
-            
-            // Generate unique filename
-            const fileExtension = path.extname(filename) || '.jpg';
-            const uniqueFilename = `arrested_img_${Date.now()}_${Math.random().toString(36).substring(7)}${fileExtension}`;
-            
-            // Ensure upload directory exists
-            const uploadsDir = path.join(__dirname, '../../uploads/arrested/images');
-            if (!fs.existsSync(uploadsDir)) {
-                fs.mkdirSync(uploadsDir, { recursive: true });
-            }
-            
-            // Save file
-            const filePath = path.join(uploadsDir, uniqueFilename);
-            fs.writeFileSync(filePath, imageBuffer);
-            
-            const imageUrl = `/uploads/arrested/images/${uniqueFilename}`;
-            
+            // For base64 images, we'll let the controller handle Cloudinary upload
+            // This is just a validation endpoint
             res.json({
                 success: true,
-                message: 'Image uploaded successfully',
-                data: {
-                    imageUrl: imageUrl,
-                    filename: uniqueFilename,
-                    originalName: filename,
-                    size: imageBuffer.length,
-                    mimetype: 'image/jpeg'
-                }
+                message: 'Base64 image data received. Use POST /api/v1/arrested with image_url field for actual upload.',
+                note: 'Base64 images will be automatically uploaded to Cloudinary when creating/updating arrested records'
             });
         } catch (error) {
-            console.error('Base64 image upload error:', error);
+            console.error('Base64 image validation error:', error);
             res.status(500).json({
                 success: false,
-                message: 'Failed to upload image'
+                message: 'Failed to validate image data'
             });
         }
     } else {
@@ -125,18 +102,11 @@ router.post('/upload-image', auth, (req, res, next) => {
                     });
                 }
 
-                const imageUrl = `/uploads/arrested/images/${req.file.filename}`;
-                
+                // For form-data uploads, we'll let the controller handle Cloudinary upload
                 res.json({
                     success: true,
-                    message: 'Image uploaded successfully',
-                    data: {
-                        imageUrl: imageUrl,
-                        filename: req.file.filename,
-                        originalName: req.file.originalname,
-                        size: req.file.size,
-                        mimetype: req.file.mimetype
-                    }
+                    message: 'Image file received. Use POST /api/v1/arrested with form-data for actual upload.',
+                    note: 'Images will be automatically uploaded to Cloudinary when creating arrested records'
                 });
             } catch (error) {
                 console.error('Image upload error:', error);

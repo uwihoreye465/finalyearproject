@@ -34,10 +34,22 @@ const {
 } = require('../middleware/validation');
 
 // Public routes (no authentication required)
+router.post('/check-nida', criminalRecordController.checkNidaDatabase);
 // Search routes
 router.get('/search/:idNumber', validateSearchId, criminalRecordController.searchPerson);
 // Get all criminal records
 router.get('/', validatePagination, criminalRecordController.getAllCriminalRecords);
+// NIDA verification endpoint
+router.post('/check-nida', (req, res) => {
+  if (criminalRecordController.checkNidaDatabase) {
+    criminalRecordController.checkNidaDatabase(req, res);
+  } else {
+    res.status(500).json({
+      success: false,
+      message: 'NIDA verification function not available'
+    });
+  }
+});
 
 // Protected routes (require authentication)
 // Statistics and recent data routes (must come before :id routes)

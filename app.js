@@ -16,6 +16,7 @@ const criminalRecordRoutes = require('./src/routes/criminalRecords');
 const arrestedRoutes = require('./src/routes/arrested');
 const testArrestedRoutes = require('./src/routes/test-arrested');
 const victimCriminalRoutes = require('./src/routes/victimCriminal');
+
 // Middleware
 const errorHandler = require('./src/middleware/errorHandler');
 
@@ -204,6 +205,7 @@ app.use('/api/v1/criminal-records', criminalRecordRoutes);
 app.use('/api/v1/arrested', arrestedRoutes);
 app.use('/api/v1/test-arrested', testArrestedRoutes);
 app.use('/api/v1/victim-criminal', victimCriminalRoutes);
+
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

@@ -963,6 +963,125 @@ class CriminalRecordController {
       });
     }
   }
-}
+
+  async checkNidaDatabase(req, res) {
+    try {
+      const { idNumber } = req.body;
+  
+      // Validate input
+      if (!idNumber || idNumber.trim() === '') {
+        return res.status(400).json({
+          success: false,
+          message: 'ID number or passport number is required',
+          isRegistered: false,
+          data: null
+        });
+      }
+  
+      const trimmedId = idNumber.trim();
+      let foundInDatabase = false;
+      let personData = null;
+      let tableSource = null;
+      let idType = null;
+  
+      // Detect if it's a passport (contains letters) or ID (only numbers)
+      const hasLetters = /[A-Za-z]/.test(trimmedId);
+      
+      if (hasLetters || trimmedId.length !== 16) {
+        // It's a passport - check passport_holders table
+        const passportResult = await pool.query(
+          `SELECT 
+            passport_number, 
+            first_name, 
+            last_name, 
+            date_of_birth, 
+            gender, 
+            nationality, 
+            country_of_residence,
+            passport_issue_date,
+            passport_expiry_date
+          FROM passport_holders 
+          WHERE passport_number = $1`,
+          [trimmedId]
+        );
+  
+        if (passportResult.rows.length > 0) {
+          foundInDatabase = true;
+          personData = passportResult.rows[0];
+          tableSource = 'passport_holders';
+          idType = 'passport';
+        }
+      } else {
+        // It's an ID number - check rwandan_citizens table
+        const citizenResult = await pool.query(
+          `SELECT 
+            id_number, 
+            first_name, 
+            last_name, 
+            date_of_birth, 
+            gender, 
+            marital_status,
+            province,
+            district, 
+            sector, 
+            cell, 
+            village
+          FROM rwandan_citizens 
+          WHERE id_number = $1`,
+          [trimmedId]
+        );
+  
+        if (citizenResult.rows.length > 0) {
+          foundInDatabase = true;
+          personData = citizenResult.rows[0];
+          tableSource = 'rwandan_citizens';
+          idType = 'indangamuntu_yumunyarwanda';
+        }
+      }
+  
+      // Return response based on whether person was found
+      if (foundInDatabase) {
+        return res.status(200).json({
+          success: true,
+          message: 'Umunyarwanda / Umwirondoro wabonetse muri NIDA',
+          isRegistered: true,
+          data: {
+            exists: true,
+            source: tableSource,
+            idType: idType,
+            person: personData
+          }
+        });
+      } else {
+        return res.status(404).json({
+          success: false,
+          message: 'Umwirondoro wanyu nturi muri NIDA (Your ID is not registered in NIDA)',
+          isRegistered: false,
+          data: {
+            exists: false,
+            source: null,
+            idType: hasLetters ? 'passport' : 'id_number',
+            person: null
+          }
+        });
+      }
+  
+    } catch (error) {
+      console.error('NIDA database check error:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to check NIDA database',
+        isRegistered: false,
+        data: null,
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  } // ← This closing brace was missing!
+  
+  } // ← Class closing brace
+
+
+
+
 
 module.exports = new CriminalRecordController();

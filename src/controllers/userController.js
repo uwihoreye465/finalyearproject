@@ -424,7 +424,7 @@ async forgotPassword(req, res) {
 
     // Save reset token to database
     await client.query(
-      'UPDATE users SET reset_token = $1, reset_token_expiry = $2 WHERE user_id = $3',
+      'UPDATE users SET reset_password_token = $1, reset_password_expires = $2 WHERE user_id = $3',
       [tokenHash, tokenExpiry, user.user_id]
     );
 
@@ -485,9 +485,9 @@ async resetPassword(req, res) {
 
     // Find user with valid reset token
     const userResult = await client.query(
-      `SELECT user_id, reset_token_expiry 
+      `SELECT user_id, reset_password_expires 
        FROM users 
-       WHERE reset_token = $1 AND reset_token_expiry > NOW()`,
+       WHERE reset_password_token = $1 AND reset_password_expires > NOW()`,
       [tokenHash]
     );
 
@@ -507,7 +507,7 @@ async resetPassword(req, res) {
 
     // Update password and clear reset token
     await client.query(
-      'UPDATE users SET password = $1, reset_token = NULL, reset_token_expiry = NULL WHERE user_id = $2',
+      'UPDATE users SET password = $1, reset_password_token = NULL, reset_password_expires = NULL WHERE user_id = $2',
       [hashedPassword, user.user_id]
     );
 
